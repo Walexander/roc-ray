@@ -367,6 +367,23 @@ extern "C" fn roc_fx_draw_line(
 }
 
 #[no_mangle]
+extern "C" fn roc_fx_draw_line_ex(
+    start: &glue::RocVector2,
+    end: &glue::RocVector2,
+    thickness: f32,
+    color: glue::RocColor,
+) {
+    if let Err(msg) = platform_mode::update(PlatformEffect::DrawLine) {
+        display_fatal_error_message(msg, ExitErrCode::EffectNotPermitted);
+    }
+
+    unsafe {
+        raylib::DrawLineEx(start.into(), end.into(), thickness, color.into());
+    }
+}
+
+
+#[no_mangle]
 extern "C" fn roc_fx_draw_circle(center: &glue::RocVector2, radius: f32, color: glue::RocColor) {
     if let Err(msg) = platform_mode::update(PlatformEffect::DrawCircle) {
         display_fatal_error_message(msg, ExitErrCode::EffectNotPermitted);
@@ -443,6 +460,18 @@ extern "C" fn roc_fx_get_screen_size() -> glue::ScreenSize {
             width,
             z: 0,
         }
+    }
+}
+
+#[no_mangle]
+extern "C" fn roc_fx_get_screen_to_world_2d (point: &glue::RocVector2, boxed_camera: RocBox<()>) -> glue::RocVector2 {
+    if let Err(msg) = platform_mode::update(PlatformEffect::GetScreenSize) {
+        display_fatal_error_message(msg, ExitErrCode::EffectNotPermitted);
+    }
+    unsafe {
+        let camera: &mut raylib::Camera2D =
+            ThreadSafeRefcountedResourceHeap::box_to_resource(boxed_camera);
+        raylib::GetScreenToWorld2D(point.into(), *camera).into()
     }
 }
 

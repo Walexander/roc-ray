@@ -65,6 +65,7 @@ pub enum PlatformEffect {
     DrawText,
     DrawRectangle,
     DrawLine,
+    DrawLineEx,
     DrawTextureRectangle,
 }
 
@@ -146,6 +147,7 @@ impl PlatformMode {
             (mode, DrawText) if mode.is_draw_mode() => true,
             (mode, DrawRectangle) if mode.is_draw_mode() => true,
             (mode, DrawLine) if mode.is_draw_mode() => true,
+            (mode, DrawLineEx) if mode.is_draw_mode() => true,
             (mode, DrawTextureRectangle) if mode.is_draw_mode() => true,
 
             // NOT PERMITTED

@@ -2,6 +2,7 @@ module [
     draw!,
     text!,
     line!,
+    line_ex!,
     with_mode_2d!,
     with_texture!,
     rectangle!,
@@ -76,6 +77,14 @@ text! = |{ font ?? Default, text: t, pos, size ?? 20, spacing ?? 1, color ?? RGB
 line! : { start : Vector2, end : Vector2, color : Color } => {}
 line! = |{ start, end, color }|
     Effect.draw_line!(InternalVector.from_vector2(start), InternalVector.from_vector2(end), rgba(color))
+
+## Draw a line on the screen with thickness
+## ```
+## Draw.line! { start: { x: 100, y: 500 }, end: { x: 500, y: 500 }, color: Red }
+## ```
+line_ex! : { start : Vector2, end : Vector2, thickness: F32, color : Color } => {}
+line_ex! = |{ start, end, thickness, color }|
+    Effect.draw_line_ex!(InternalVector.from_vector2(start), InternalVector.from_vector2(end), thickness, rgba(color))
 
 ## Draw a rectangle on the screen.
 ## ```

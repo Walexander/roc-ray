@@ -15,12 +15,14 @@ hosted [
 
     # EFFECTS
     get_screen_size!,
+    get_screen_to_world_2d!,
     exit!,
     draw_text!,
     draw_text_font!,
     measure_text!,
     measure_text_font!,
     draw_line!,
+    draw_line_ex!,
     draw_rectangle!,
     draw_rectangle_gradient_v!,
     draw_rectangle_gradient_h!,
@@ -64,6 +66,8 @@ import InternalVector exposing [RocVector2]
 import InternalRectangle exposing [RocRectangle]
 
 get_screen_size! : {} => { height : I32, width : I32, z : I64 }
+
+get_screen_to_world_2d! : RocVector2, Camera => RocVector2
 
 exit! : {} => {}
 
@@ -128,6 +132,7 @@ measure_text! : Str, F32, F32 => RocVector2
 measure_text_font! : Font, Str, F32, F32 => RocVector2
 
 draw_line! : RocVector2, RocVector2, RocColor => {}
+draw_line_ex! : RocVector2, RocVector2, F32, RocColor => {}
 
 draw_rectangle! : RocRectangle, RocColor => {}
 draw_rectangle_gradient_v! : RocRectangle, RocColor, RocColor => {}

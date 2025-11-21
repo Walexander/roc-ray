@@ -22,6 +22,7 @@ module [
     load_file_to_str!,
     send_to_peer!,
     get_screen_size!,
+    get_screen_to_world_2d!,
     random_i32!,
 ]
 
@@ -196,6 +197,12 @@ get_screen_size! : {} => { height : F32, width : F32 }
 get_screen_size! = |{}|
     Effect.get_screen_size!({})
     |> |{ width, height }| { width: Num.to_frac(width), height: Num.to_frac(height) }
+
+get_screen_to_world_2d! : Vector2, Camera => Vector2
+get_screen_to_world_2d! = |point, camera|
+    Effect.get_screen_to_world_2d!(InternalVector.from_vector2(point), camera)
+    |> InternalVector.to_vector2
+
 
 ## Set the target frames per second. The default value is 60.
 set_target_fps! : I32 => {}
