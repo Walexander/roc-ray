@@ -1,4 +1,4 @@
-module [Unit, MoveChoice, Id, combatOrder, isAlive, takeHit, summary, reroutePath, update, make, moveTo, initial]
+module [Unit, MoveChoice, Id, combatOrder, isAlive, takeHit, summary, reroute, update, make, moveTo, initial, updateMovement, updateReadiness]
 import Hex exposing [Doubled, Point, doubled, cubeLerp]
 import Utils exposing [frameCountToSeconds]
 import Health
@@ -18,6 +18,7 @@ Unit : {
     velocity: Point,
     # sprite : Sprite,
     lastPath : List Doubled,
+    type: [Artillery, Cavalry, Infantry],
     readiness : [Cooldown U32, Ready, Moving({start: Hex.Point, end: Hex.Point, t: F32})],
     range : U8,
 }
@@ -36,6 +37,7 @@ make = \{ type, id: inId, army, cell } ->
             {
                 id,
                 attackDamage: 18u32,
+                type,
                 army,
                 position,
                 readiness: Ready,
@@ -43,7 +45,7 @@ make = \{ type, id: inId, army, cell } ->
                 cell,
                 dest: cell,
                 lastPath,
-                moveRate: 120,
+                moveRate: 0.75,
                 cooldownRate: 60.0 * 4,
                 range: 2,
                 velocity: { x: 0, y: 0 },
@@ -54,6 +56,7 @@ make = \{ type, id: inId, army, cell } ->
             {
                 id,
                 attackDamage: 15u32,
+                type,
                 army,
                 position,
                 health: Living (Health.make 100),
@@ -61,7 +64,7 @@ make = \{ type, id: inId, army, cell } ->
                 cell,
                 dest: cell,
                 lastPath,
-                moveRate: 90,
+                moveRate: 1.0,
                 cooldownRate: 60.0 * 3,
                 velocity: { x: 0, y: 0 },
                 range: 8,
@@ -72,6 +75,7 @@ make = \{ type, id: inId, army, cell } ->
             {
                 id,
                 attackDamage: 11u32,
+                type,
                 army,
                 position,
                 readiness: Ready,
@@ -79,23 +83,37 @@ make = \{ type, id: inId, army, cell } ->
                 cell,
                 dest: cell,
                 lastPath,
-                moveRate: 50,
+                moveRate: 1.5,
                 cooldownRate: 60.0 * 2.125,
                 velocity: { x: 0, y: 0 },
                 range: 1,
                 # sprite: Assets.horsey,
             }
 
+moveTo : Unit, Doubled, (Doubled -> Bool) -> Unit
 moveTo = |unit, dest, isOccupied|
-    path = Hex.findGraph(unit.cell, dest, isOccupied) ?? [ ]
-    readiness = when path is
-        [first, second, ..] -> Moving { start: Hex.hexToPixel first, end: Hex.hexToPixel second, t: 0 }
-        _ -> Ready
-    { unit &
-        dest,
-        readiness,
-        lastPath: path,
-    }
+    from_cell = unit.cell
+
+    path = when unit.army is
+        Confederates -> Hex.findGraph2(from_cell, dest, isOccupied) ?? unit.lastPath
+        Union -> Hex.findGraph2(from_cell, dest, isOccupied) ?? unit.lastPath
+
+    prev_cell = List.get(unit.lastPath, 1) |> Result.with_default(unit.cell)
+    next_cell = List.get(path, 1) |> Result.with_default(unit.cell)
+
+    (readiness, lastPath) = when unit.readiness is
+        Cooldown _ | Ready -> (Moving { start: Hex.hexToPixel unit.cell, end: Hex.hexToPixel(next_cell), t: 0  }, path)
+        Moving { start, end, t } ->
+            start_cell = Hex.pixelToHex(start)
+            end_cell = Hex.pixelToHex(end)
+            if start_cell == from_cell && next_cell != end_cell then
+                (Moving { start: end, end: start, t: 1 - t }, List.prepend(path, end_cell))
+            else if next_cell == Hex.pixelToHex(end) then
+                (Moving {start, end, t}, path)
+            else
+                (Moving {start, end, t}, List.prepend(path, prev_cell))
+
+    { unit & readiness, lastPath, dest }
 isAlive = \{ health } ->
     when health is
         Living hp -> Health.isAlive hp
@@ -161,16 +179,54 @@ expect
 
 # initial : ( \Hex.Doubled -> Bool ) -> List Unit
 initial = |isOccupied| [
-    Unit.make { id: 5, type: Cavalry, army: Union, cell: doubled 1 1 },
-    Unit.make { id: 4, type: Infantry, army: Union, cell: doubled 1 5 },
-    Unit.make { id: 3, type: Infantry, army: Union, cell: doubled 0 4 },
-    Unit.make { id: 6, type: Artillery, army: Confederates, cell: doubled 10 6 }
-    |> Unit.moveTo (doubled 6 2) isOccupied,
-    Unit.make { id: 7, type: Cavalry, army: Confederates, cell: doubled 12 8 }
-    |> Unit.moveTo (doubled 5 1) isOccupied,
-    Unit.make { id: 8, type: Infantry, army: Confederates, cell: doubled 12 0 }
-    |> Unit.moveTo (doubled 4 10) isOccupied,
+    make { id: 5, type: Cavalry, army: Union, cell: doubled 7 1 },
+    make { id: 4, type: Infantry, army: Union, cell: doubled 7 3 },
+    make { id: 3, type: Infantry, army: Union, cell: doubled 7 5 },
+    make { id: 6, type: Artillery, army: Confederates, cell: doubled -4 -6 },
+    make { id: 7, type: Cavalry, army: Confederates, cell: doubled -4 -8 },
+    make { id: 8, type: Infantry, army: Confederates, cell: doubled -5 -7 },
 ]
+
+updatePath: Unit, (Doubled -> Bool) -> Unit
+
+
+updateMovement : Unit -> Unit
+updateMovement = |unit|
+    when unit.readiness is
+        Ready | Cooldown _ -> unit
+        Moving { start, end, t } ->
+            newT = t + 1/60 * unit.moveRate
+            newPos = Hex.pointLerp(start, end, newT)
+            if newT >= 1 then
+                cell = Hex.pixelToHex(end)
+                position = Hex.hexToPixel cell
+                updated = when unit.lastPath is
+                    [_, _] | [_] | [] -> { unit & position, cell, lastPath: [], readiness: Cooldown(unit.cooldownRate |> Num.round) }
+                    [_, to, next, ..] -> {unit &
+                        cell: to,
+                        position: Hex.hexToPixel to,
+                        lastPath: List.drop_first unit.lastPath 1,
+                        readiness: Moving({ start: Hex.hexToPixel to, end: Hex.hexToPixel next, t: 0 })
+                    }
+
+                updated
+            else
+                { unit &
+                    position: newPos,
+                    cell: Hex.pixelToHex(unit.position),
+                    readiness: Moving {
+                        start, end, t: newT
+                    }
+                }
+
+
+updateReadiness: Unit -> Unit
+updateReadiness = |unit|
+    readiness = when unit.readiness is
+        Ready | Moving _ -> unit.readiness
+        Cooldown countdown if countdown > 0 -> Cooldown(Num.to_u32(countdown - 1))
+        Cooldown _ -> Ready
+    { unit & readiness }
 
 update : Unit, U64, MoveChoice, (Doubled -> Bool) -> Unit
 update = \original, frameCount, move, cannotMoveTo ->
@@ -217,7 +273,6 @@ update = \original, frameCount, move, cannotMoveTo ->
             f = Hex.subPoint original.position dest_coords
             dot_to = Hex.dot (Hex.subPoint position dest_coords) f
 
-            dbg "Proceeding to next cell $(nextCell.row |> Num.to_str), $(nextCell.column |> Num.to_str) $(dot_to |> Num.to_str)"
             { original &
                 cell: nextCell,
                 position: Hex.hexToPixel nextCell,
@@ -318,7 +373,19 @@ summary = \unit, planned ->
     dest: {$(Num.to_str unit.dest.column),$(Num.to_str unit.dest.row)} $(distance)
     [$(List.len unit.lastPath |> Num.to_str):$(List.len planned |> Num.to_str)] {$(readyState)}
     """
-
+reroute : Unit, (Doubled -> Bool) -> Unit
+reroute = |unit, isOccupied|
+    when unit.readiness is
+        Moving { end, t } ->
+            if isOccupied(Hex.pixelToHex(end)) then
+                dbg "Re-routing unit ${Inspect.to_str unit.id} to ${Inspect.to_str unit.dest}"
+                moveTo(unit, unit.dest, isOccupied)
+                # { unit & lastPath: Hex.findGraph(unit.cell, unit.dest, isOccupied) |> Result.with_default [],
+                #     readiness: Moving { start: end, end: start, t: 1 - t}
+                # }
+            else
+                unit
+        _ -> unit
 reroutePath = \newPath, lastPath, currentCell ->
     lastNextStep =
         List.get lastPath 1
