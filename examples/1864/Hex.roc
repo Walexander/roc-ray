@@ -314,10 +314,11 @@ findGraph2 = \from, to, isBlocked ->
         when lerpPath is
             Ok next if next == end -> 1
             Ok _ -> 2
-            Err _ -> 5
-
+            Err _ -> 10
     estimator = |candidate|
         hexDistance candidate to
+
+    # estimator = |candidate|
 
     Graph.astar3 {
         isTarget: |c| c == to,

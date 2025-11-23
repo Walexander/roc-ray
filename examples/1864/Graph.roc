@@ -290,26 +290,24 @@ aStarStep = \neighbors, rest, current, currentCost, costs, parents, sorter ->
     }
 ## aStar finds shortest path to "C"
 # ## It finds the shortest path
-constOne = |_, _| 1
-
 astar3 = \{ isTarget, estimator, cost_fn, graph, root } ->
     step = \neighbors, currentNode, nextStack, costs, parents ->
         currentCost =
             Dict.get costs currentNode
-            |> Result.with_default 0
+            |> Result.with_default 100
 
         neighbors
         |> List.keep_if (|n|
             when Dict.get costs n is
                 Err _ -> Bool.true
-                Ok node_cost -> node_cost > currentCost
+                Ok _ -> Bool.false
         )
         |> |newbies|
             # addCosts newbies currentCost costs
             List.walk(newbies, costs, |tmp_costs, node|
                 node_cost: I32
                 node_cost = cost_fn currentNode node
-                Dict.insert tmp_costs node (node_cost)
+                Dict.insert tmp_costs node (currentCost + node_cost)
             )
             |> |newCosts| {
                 costs: newCosts,
