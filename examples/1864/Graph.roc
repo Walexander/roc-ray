@@ -128,6 +128,15 @@ makePathTo = \v, paths ->
     # iter v ([v] |> List.reserve 128)
     iter v [v]
 
+make_path_to : a, Dict a a -> List a
+make_path_to = |element, parents|
+    iter = \child, accum ->
+        Dict.get parents child
+        |> Result.map_ok \child_ -> iter child_ List.prepend(accum, child_)
+        |> Result.with_default accum
+    iter element [element]
+
+
 ## Perform a breadth-first search with a fixed cost of 1 for each step
 ## and an `Estimator` function to determine priority
 ## - `isTarget` : A function that returns true if a vertex is the target.
@@ -291,72 +300,59 @@ aStarStep = \neighbors, rest, current, currentCost, costs, parents, sorter ->
 ## aStar finds shortest path to "C"
 # ## It finds the shortest path
 astar3 = \{ isTarget, estimator, cost_fn, graph, root } ->
-    step = \neighbors, currentNode, nextStack, costs, parents ->
+    ## this processes neighbors of currentNode, updating the cost dictionary, parent node and frontier
+    step = |neighbors, currentNode, frontier, costs, parents|
         currentCost =
             Dict.get costs currentNode
+            ## If we dont have a cost for our current node, shit is really fux0red
+            |> Result.map_err |_| crash "how can we be missing a cost to the current node??"
             |> Result.with_default 100
 
-        neighbors
-        |> List.keep_if (|n|
-            when Dict.get costs n is
-                Err _ -> Bool.true
-                Ok _ -> Bool.false
+        ## map our neighbors, only including nodes we haven't seen before
+        ## or, if we have seen them, if the cost to get there from current node is
+        ## cheaper than the one we saw previously
+        ## for the neighbors we want, return a tuple of (cost, node)
+        List.keep_oks(neighbors, \node ->
+            new_cost = currentCost + cost_fn(currentNode, node)
+            when Dict.get costs node  is
+                Err _ -> Ok (new_cost, node)                                               ## Keep: not seen yet
+                Ok curr_cost if curr_cost > new_cost ->
+                    # dbg "cheaper path to ${Inspect.to_str node} through ${Inspect.to_str currentNode} ${Inspect.to_str curr_cost} > ${Inspect.to_str new_cost}"
+                    Ok (new_cost, node)                                                    ## Keep: cheaper to go through currentNode
+                Ok _ -> Err KeyNotFound                                                    ## Skip: we've seen it before and the existing path is cheaper
         )
-        |> |newbies|
-            # addCosts newbies currentCost costs
-            List.walk(newbies, costs, |tmp_costs, node|
-                node_cost: I32
-                node_cost = cost_fn currentNode node
-                Dict.insert tmp_costs node (currentCost + node_cost)
-            )
-            |> |newCosts| {
-                costs: newCosts,
-                parents: addParents currentNode newbies parents,
-                stack: List.map newbies |node|
-                    (node, currentCost + (estimator node))
-                |> List.walk nextStack \accum, value -> PriorityQueue.push accum value,
-            }
-    aStarHelper3 = |thisStack, costs, parents|
-        PriorityQueue.pop thisStack
-        |> Result.try \((currentNode, _), nextStack) ->
-            if isTarget currentNode then
-                Ok (currentNode, parents)
+        ## now walk over the valid neighbors
+        |> List.walk({ costs, parents, stack: frontier },
+            |accum, (node_cost, node)| {
+                costs: Dict.insert accum.costs node node_cost,                                 ## upsert cost to traverse this node
+                parents: Dict.insert accum.parents node currentNode,                           ## upsert the neighbor node's parent
+                stack: PriorityQueue.push accum.stack (node, node_cost + estimator(node))      ## add our current cost + our a* heuristic to generate a new priority
+            })
+
+    ## recursive function that processes the next step of a frontier
+    ## returns when our stack is empty or we found the node we're looking for
+    helper = |frontier, current_costs, parent_paths|
+        ## get the next node from our stack
+        PriorityQueue.pop frontier
+        |> Result.try \((currentNode, _), next_stack) ->
+
+            if isTarget currentNode then                                                  ### We found it!!
+                ## this *is* our node, return it along with the parent paths
+                Ok (currentNode, parent_paths)
             else
-                when graph currentNode is
-                    Err _ -> aStarHelper3 nextStack costs parents
-                    Ok neighbors ->
-                        step neighbors currentNode nextStack costs parents
-                        |> |stepResult| aStarHelper3 stepResult.stack stepResult.costs stepResult.parents
+                ## this isnt our node, so get its neighbors
+                graph currentNode
+                |> step currentNode next_stack current_costs parent_paths
+                |> |{stack, costs, parents }| helper stack costs parents
+        ## we popped an empty frontier
+        ## we've run out of nodes and haven't found our target
         |> Result.map_err |_| NotFound
 
-    initialCosts = Dict.empty {} |> Dict.insert root 0
-    initialParents = makeEmptyParents {}
+    initialCosts = Dict.empty {} |> Dict.insert root 0.0
+    initialParents_ = Dict.empty {}
 
     comparator = \(_, a), (_, b) -> Num.compare a b
     initialStack = PriorityQueue.make comparator |> PriorityQueue.push (root, 0)
 
-    aStarHelper3 initialStack initialCosts initialParents
-    |> Result.map_ok  \(t, paths) -> (t, makePathTo t paths)
-
-testGraphMultipath =
-    [
-        ("A", ["D", "C", "B"]),
-        ("C", ["D", "E", "F"]),
-        ("D", ["H", "I", "J"]),
-        ("B", ["XYZ"]),
-        ("H", ["XYZ"]),
-        ("I", []),
-        ("J", []),
-        ("XYZ", []),
-    ]
-    |> fromList2
-emptyGraph = [] |> fromList2
-testGraph2 =
-    [
-        ("A", ["B", "Ccorrect"]),
-        ("B", ["D", "Ccorrect", "Cwrong"]),
-        ("D", []),
-        ("Ccorrect", []),
-        ("Cwrong", []),
-    ]
-    |> fromList2
+    helper initialStack initialCosts initialParents_
+    |> Result.map_ok  \(t, paths) -> (t, make_path_to t paths)

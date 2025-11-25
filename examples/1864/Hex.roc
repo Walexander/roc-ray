@@ -4,11 +4,14 @@ module [
     Line,
     add,
     dot,
+    border,
     addPoint,
     subPoint,
     pixelToHex,
     clamped,
     closestNeighbors,
+    doubleNeighbors,
+    clampCube,
     clamp,
     findGraph,
     findGraph2,
@@ -140,9 +143,23 @@ clampCube = \min, max -> \cell ->
         && cell.row
         <= max.row
 
-minCell = doubled -8 -8
-maxCell = doubled 8 8
+minCell = doubled -8 -6
+maxCell = doubled 8 6
 clamped = clampCube minCell maxCell
+border =
+    top_left = doubled(minCell.column - 1, minCell.row - 1)
+    top_right = doubled(maxCell.column + 1, top_left.row)
+
+    bottom_right = doubled(top_right.column, maxCell.row + 1)
+    bottom_left = doubled(top_left.column, bottom_right.row)
+    top_border = cubeLerp top_left top_right
+    List.join([
+        top_border,
+        cubeLerp top_right bottom_right,
+        cubeLerp top_left bottom_left,
+        cubeLerp bottom_left bottom_right,
+    ])
+
 
 expect
     clamped (doubled 0 0)
@@ -281,6 +298,7 @@ expect
 
 # graph = \isBlocked -> \cell -> Ok (neighborsOf cell |> List.drop_if isBlocked)
 graph = |isBlocked| |cell| Ok(neighborsOf cell |> List.drop_if isBlocked)
+graph_ = |is_blocked| |cell| neighborsOf cell |> List.drop_if is_blocked
 
 findPath = \from, to -> cubeLerp from to
 magnitude = |{ x, y }|
@@ -308,24 +326,28 @@ findGraph = \from, to, isBlocked ->
 
 findGraph2 : Doubled, Doubled, (Doubled -> Bool) -> Result (List Doubled) [NotFound]
 findGraph2 = \from, to, isBlocked ->
-    cost_fn: Doubled, Doubled -> I32
+    ## if there are no obstacles, the lerp path is the best loooking line
+    ## buff the "end" nodes that are on the same path as the lerp line
+    cost_fn: Doubled, Doubled -> F32
     cost_fn = \start, end ->
         lerpPath = cubeLerp start to |> List.get 1
         when lerpPath is
-            Ok next if next == end -> 1
-            Ok _ -> 2
-            Err _ -> 10
+            Ok next if next == end -> 0.9
+            Ok _ -> 1.0
+            Err _ -> 10.0
+    ## its important this not overestimate the distance
+    ## the hex distance is the optimal path without obstacles
+    ## so it should only be able to provide at best actual cost
+    ## and, at worst, something singificantly lower than the real cost
     estimator = |candidate|
-        hexDistance candidate to
-
-    # estimator = |candidate|
+        hexDistance candidate to |> Num.to_f32
 
     Graph.astar3 {
         isTarget: |c| c == to,
         estimator,
         cost_fn: cost_fn,
         root: from,
-        graph: graph isBlocked,
+        graph: graph_ isBlocked,
     }
     |> Result.map_err \_ -> NotFound
     |> Result.map_ok .1

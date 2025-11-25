@@ -3,7 +3,9 @@ app [Model, init!, render!] { rr: platform "../../platform/main.roc" }
 import Unit exposing [Unit]
 # import Assets
 import Hex exposing [Doubled, doubled, hexToPixel, pixelToHex]
-import HexTile exposing [HexTile]
+import HexTile exposing [HexTile, HexMap]
+
+import Noise
 import rr.Draw
 import rr.RocRay exposing [ Camera, Vector2 ]
 import rr.InternalVector
@@ -28,12 +30,18 @@ ScreenState : [
     InGame GameState,
     GameOver GameOverState,
 ]
-
+CameraSettings: {
+        target : Vector2,
+        offset : Vector2,
+        rotation : F32,
+        zoom : F32,
+}
 YearOfDecision : {
     frameCount : U64,
     # inputs : (W4.Gamepad, W4.Gamepad),
     # lastInputs : (W4.Gamepad, W4.Gamepad),
     selectedIndex: I8,
+    border: List Doubled,
     hexTexture : RocRay.Texture,
     selectedCell : Doubled,
     hoverCell : Doubled,
@@ -41,9 +49,12 @@ YearOfDecision : {
     playerVelocity: Hex.Point,
     playerPath: Hex.Line,
     unit: Unit,
-    map_tiles: List HexTile,
+    map: HexMap,
     units: List Unit,
     camera: Camera,
+    camera_settings: CameraSettings,
+    base_camera: CameraSettings,
+    trauma: F32,
 
     # background: Sprite,
     # backgrounds: List Sprite,
@@ -123,10 +134,10 @@ init! : {} => Result Model _
 init! = |{}|
     RocRay.init_window! { width: screenDims.width, height: screenDims.height, title: "Stupid STuff" }
     RocRay.set_target_fps! 24
-    hexTexture = Texture.load!("examples/1864/assets/Flat/hex-tiles-2px-outline.png")?
+    hexTexture = Texture.load!("examples/1864/assets/Flat/hex-tiles-no-outline.png")?
     camera_settings = {
-        target: { x: 0, y: 0},
-        offset: {x: screenDims.width / 2, y: screenDims.height / 2},
+        target: { x: 0.0, y: 0 },
+        offset: {x: screenDims.width / 2, y: screenDims.height / 2 - 100},
         zoom: 0.55,
         rotation: 0
     }
@@ -136,8 +147,7 @@ init! = |{}|
         |> List.map |seed| List.append (Hex.neighborsOf seed) seed
         |> List.join
 
-    map_tiles = obstacles
-        |> List.map |cell| { cell, terrain: Sand }
+    map = HexTile.init(doubled(-8, -6), doubled(8, 6))
 
     isOccupied = \cube -> List.contains obstacles cube
 
@@ -146,20 +156,24 @@ init! = |{}|
             army: Union,
             cell: Hex.doubled(7, -7),
             type: Cavalry,
-        } |> Unit.moveTo(doubled(-6, 0), isOccupied)
+        }
 
     units = Unit.initial isOccupied
     baseState : Model
     baseState = {
         frameCount: Num.to_u64 0,
-        map_tiles,
         hoverCell: doubled 0 0,
         selectedCell: doubled 0 0,
         selectedIndex: 0,
         player: { x: 0, y: 0 },
+        trauma: 0,
+        map,
         playerVelocity: { x: 0, y: 0 },
         playerPath: Hex.findPath (doubled 0 0) (doubled 0 0) |> Hex.pathToLine,
         screenState: TitleScreen { ready: WaitingBoth },
+        border: Hex.border,
+        camera_settings,
+        base_camera: camera_settings,
         camera,
         unit: List.first(units) |> Result.with_default unit,
         units ,
@@ -187,10 +201,8 @@ render! = |model, pf|
     #             |> Task.await \_ -> updateInGame state model.frameCount inputs model.inputs
 
 
-    obstacles = List.map model.map_tiles .cell
-
-    isOccupied = \cube -> List.contains obstacles cube
-        || List.contains (model.units |> List.map .cell) cube
+    isOccupied = \cube -> List.contains (model.units |> List.map .cell) cube
+    path_finder = HexTile.make_path_finder model.map isOccupied
 
     mouse_world = RocRay.get_screen_to_world_2d! pf.mouse.position model.camera
 
@@ -213,74 +225,85 @@ render! = |model, pf|
     Unit Summary: ${ Unit.summary summary_unit [] }
     ${Inspect.to_str summary_unit.position} ${straightLine |> List.len|> Num.to_str}
     """
-    summary_text_color = if summary_unit.army == Confederates then Red else Black
-
-    # updatedUnit = Unit.update model.unit pf.frame_count Finished isOccupied
+    summary_text_color = if summary_unit.army == Confederates then Red else Silver
     player_move = if Mouse.pressed pf.mouse.buttons.left then
         if Keys.down pf.keys KeyLeftShift then
-            dbg "toggling obstacle@${Inspect.to_str mouseCell2}"
-            if Keys.down pf.keys KeyLeftControl then
-                DeleteObstacle mouseCell2
-            else
-                ToggleCellObstacle mouseCell2
+            point = Hex.hexToPixel mouseCell2
+            noise = Noise.perlin2d(point.x / screenDims.width, frequency * point.y / screenDims.height) |> Num.mul (12) |> Num.round
+            dbg "toggling obstacle@${Inspect.to_str mouseCell2} / ${frequency|>Num.to_str}, ${Inspect.to_str point} = ${noise |> Num.to_str}"
+            ToggleTerrain mouseCell2 HexTile.random_terrain(
+                pf.frame_count
+            )
+        else if isOccupied mouseCell2 then
+            when (List.find_first model.units |u| u.cell == mouseCell2) is
+                Ok unit -> SelectUnit unit.id
+                Err _ -> NoMove
         else
-            dbg "Moving ${Inspect.to_str model.selectedIndex} to ${Inspect.to_str mouseCell2}"
             MoveTo mouseCell2
+    else if Keys.pressed pf.keys KeySpace then
+        AddTrauma
     else
         NoMove
+
 
     updatedUnits =
         model.units
         |> List.map(|unit|
-            Unit.updateMovement(unit)
-            |> Unit.reroute (|u| if unit.cell == u then Bool.false else isOccupied u)
+            Unit.updateMovement(unit, map)
+            |> Unit.reroute (|u| if unit.cell == u then Bool.false else isOccupied u) path_finder
             |> Unit.updateReadiness
         )
         # |> List.map(|unit| Unit.reroute unit isOccupied)
         |> |units|
             when player_move is
-                MoveTo dest -> List.map(units, |u| if u.id == model.selectedIndex then Unit.moveTo(u, dest, isOccupied) else u)
+                MoveTo dest -> List.map(units, |u| if u.id == model.selectedIndex then Unit.moveTo(u, dest, path_finder) else u)
                 _ -> units
 
 
-    map_tiles =
+    map =
         when player_move is
-            DeleteObstacle cell ->
-                List.drop_if model.map_tiles |tile| tile.cell == cell
-            ToggleCellObstacle cell ->
-                existing = List.find_first model.map_tiles |tile|
-                    tile.cell == cell
-# when existing
-                when existing is
-                    Ok tile ->
-                        tiles_ = model.map_tiles
-                            |> List.drop_if(|t| t.cell == cell)
-                        if tile.terrain == Water then
-                            tiles_
-                        else
-                            List.append tiles_ ({ tile & terrain: HexTile.next_terrain tile })
-                    Err _ ->
-                        List.append model.map_tiles { cell: cell, terrain: HexTile.random_terrain(pf.frame_count) }
-            _ -> model.map_tiles
+            ToggleTerrain cell terrain ->
+                HexTile.toggle_terrain model.map cell terrain
+            _ -> model.map
+
+    old_settings = model.camera_settings
+    intensity = model.trauma * model.trauma * model.trauma
+    amplitude = 40.0 * intensity
+    frequency = pf.frame_count |> Num.to_f32 |> Num.mul 15.5
+    camera_settings = { old_settings &
+        target: {
+            x: model.base_camera.target.x +
+                Noise.perlin2d(frequency, 0) * amplitude,
+            y: model.base_camera.target.y +
+                Noise.perlin2d(0, frequency) * amplitude
+        },
+        rotation:
+            model.base_camera.rotation +
+            Noise.perlin2d(frequency, frequency) * amplitude * 0.075
+
+    }
+    Camera.update!(model.camera, camera_settings)
+
     updated = { model &
         hoverCell: mouseCell2,
         selectedCell,
         unit: summary_unit,
-        selectedIndex: summary_unit.id,
+        camera_settings: camera_settings,
+
+        selectedIndex: when player_move is
+            SelectUnit id -> id
+            _ -> summary_unit.id,
+        trauma: when player_move is
+            AddTrauma -> Hex.lerp model.trauma 1 0.5
+            _ -> Num.max(model.trauma - 0.01, 0 ),
         units: updatedUnits,
-        map_tiles
+        map,
     }
 
     hoverCellPoint = hexToPixel mouseCell2
-    textColor = if Keys.down pf.keys KeyLeftShift then Navy else RGBA 0 0 0 0
     distance = Hex.hexDistance mouseCell2 selectedCell
 
-    cubePath_ = if Keys.down pf.keys KeyLeftShift then
-        Hex.findGraph2 Hex.pixelToHex(summary_unit.position) mouseCell2 isOccupied
-    else
-        Hex.findGraph Hex.pixelToHex(summary_unit.position) mouseCell2 isOccupied
-
-    cubePath = cubePath_ |> Result.with_default []
+    cubePath = path_finder(Hex.pixelToHex(summary_unit.position), mouseCell2)
 
     straightLine = cubePath
         |> List.map |point|
@@ -288,8 +311,7 @@ render! = |model, pf|
 
     unitPath_ =
         summary_unit.lastPath
-        |> List.map |point|
-            Hex.hexToPixel point
+        |> List.map Hex.hexToPixel
         |> List.drop_first 1
         |> List.prepend (summary_unit.position)
 
@@ -303,27 +325,81 @@ render! = |model, pf|
     """
 
 
-    Draw.draw! White |{}|
+    Draw.draw! Black |{}|
         Draw.with_mode_2d!
             model.camera
             |{}|
-                _ = renderMap! model.map_tiles selectedCell model.hexTexture
+                render_map! model.map model.hexTexture
+
                 drawPath! unitPath_ Navy 5 Bool.false
-                path_color = if Keys.down pf.keys KeyLeftControl then Red else White
-                drawPath! straightLine path_color 5 Bool.false
-                renderHexOutline! summary_unit.cell Hex.hexSize  Black
+                if Keys.down pf.keys KeyLeftControl then
+                    drawPath! straightLine White 5 Bool.false
+                else {}
+            # renderHexOutline! summary_unit.cell Hex.hexSize  White
                 renderHexOutline! Hex.pixelToHex(summary_unit.position) Hex.hexSize  Navy
                 renderHexOutline! summary_unit.dest Hex.hexSize Aqua
                 renderHexOutline! mouseCell2  (Hex.hexSize + 4) Red
                 List.for_each!(model.units, |unit| drawUnit! unit)
-        Draw.text! { pos: { x: 10, y: 52 }, text: debugText, size: 40, color: textColor }
+
+        if Keys.down pf.keys KeyLeftShift then
+            Draw.text! { pos: { x: 400, y: 600 }, text: debugText, size: 24, color: White }
+        else
+            {}
         Draw.circle! {
             center: pf.mouse.position,
             color: Red,
             radius: 5,
         }
-        summary_text_dims = Effect.measure_text! summary_text 40 1 |> InternalVector.to_vector2
-        Draw.text! { pos: { x: 10, y: screenDims.height - (Num.to_f32 summary_text_dims.y + 40) }, text: summary_text, size: 40, color: summary_text_color }
+        summary_text_dims = Effect.measure_text! summary_text 24 1 |> InternalVector.to_vector2
+        Draw.text! { pos: { x: 128+10, y: screenDims.height - (Num.to_f32 summary_text_dims.y + 24) }, text: summary_text, size: 24, color: summary_text_color }
+        gauge_size = screenDims.height - 84 - 16
+        gauge_width = 16
+
+        Draw.rectangle!{
+            rect: {
+                x: 8,
+                y: 32,
+                height: gauge_size + 16,
+                width: gauge_width * 2 + 3 * 4,
+            },
+            color: White,
+        }
+        Draw.rectangle!{
+            rect: {
+                x: 8 + 4,
+                y: 32 + 4,
+                height: gauge_size + 4,
+                width: gauge_width,
+            },
+            color: Black,
+        }
+        Draw.rectangle!{
+            rect: {
+                x: 8 + 6,
+                y: 32 + 6 + ( gauge_size - gauge_size * model.trauma - 2) ,
+                height: gauge_size * model.trauma + 2,
+                width: gauge_width - 4,
+            },
+            color: Red,
+        }
+        Draw.rectangle!{
+            rect: {
+                x: 8 + 8 + gauge_width,
+                y: 32 + 4,
+                height: gauge_size + 4,
+                width: gauge_width,
+            },
+            color: Black,
+        }
+        Draw.rectangle!{
+            rect: {
+                x: 8 + 8 + gauge_width + 2,
+                y: 32 + 6 + ( gauge_size - gauge_size * intensity - 2) ,
+                height: gauge_size * intensity + 2,
+                width: gauge_width - 4,
+            },
+            color: Teal,
+        }
 
     Ok updated
 
@@ -341,12 +417,21 @@ renderMap! = |tiles, selectedCell, texture|
     )
     # drawHex! selectedCell texture { x: -128, y: 4 * 128 } White
     renderHexOutline! selectedCell Hex.hexSize Black
-    # Draw.circle! {
-    #     color: White,
-    #     center: hexToPixel selectedCell |> Hex.addPoint translate,
-    #     radius: 10,
-    # }
     Ok {}
+
+render_map! = |hex_map, texture|
+    List.concat(
+        hex_map.border
+            |> List.map(|c|
+                HexTile.make_tile(c, Basalt)
+            ),
+        Dict.values hex_map.tiles
+    )
+    |> List.for_each!(|tile|
+        tx_pos = HexTile.texture_position tile (Hex.hexSize * 2)
+        drawHex! tile.cell texture tx_pos Black
+    )
+
 
 drawPath! = |listOfPoints, color, thickness, connected|
     first = List.first listOfPoints ?? { x: 0, y: 0 }
@@ -379,13 +464,13 @@ drawHex! = |cell, texture, pos, color|
             height: Hex.hexSize * 2,
         },
     }
-    cellText = "${cell.column |> Num.to_str}, ${cell.row |> Num.to_str}"
-    Draw.text! {
-        color,
-        size: 24,
-        text: cellText,
-        pos: { x: center.x - 24, y: center.y - 12 },
-    }
+    # cellText = "${cell.column |> Num.to_str}, ${cell.row |> Num.to_str}"
+    # Draw.text! {
+    #     color,
+    #     size: 24,
+    #     text: cellText,
+    #     pos: { x: center.x - 24, y: center.y - 12 },
+    # }
 
 # drawHexOutline! = \cell, translate, color ->
 #     points = Hex.hexPoints translate
@@ -1357,16 +1442,26 @@ drawUnit! = \unit ->
             Ready -> ({ fill: Blue, border: Black }, Hex.horizontalSpace |> Num.round)
             Moving _ -> ({ fill: RGBA 0 0 0 0, border: Black }, Hex.horizontalSpace |> Num.round)
     Draw.rectangle! {
-        color: Black,
+        color: White,
         rect: {
-            width: 68,
-            height: 68,
-            x: drawTo.x - (68 / 2),
-            y: drawTo.y - (68 / 2),
+            width: 82,
+            height: 82,
+            x: drawTo.x - (82 / 2),
+            y: drawTo.y - (82 / 2),
         }
     }
     Draw.rectangle! {
-        color: White,
+                    # color: if unit.army == Confederates then Silver else RGBA(11, 137, 252, 255),
+        color: Black,
+        rect: {
+            width: 78,
+            height: 78,
+            x: drawTo.x - (78 / 2),
+            y: drawTo.y - (78 / 2),
+        }
+    }
+    Draw.rectangle! {
+        color: if unit.army == Confederates then Silver else RGBA(11, 137, 252, 255),
         rect: {
             width: 64,
             height: 64,
@@ -1374,25 +1469,26 @@ drawUnit! = \unit ->
             y: drawTo.y - (64 / 2),
         }
     }
+    Draw.circle! {
+        center: { x: drawTo.x, y: drawTo.y - 12 },
+        radius: 20,
+        color: Black,
+    }
     _ = when unit.type is
         Cavalry  -> Draw.circle! {
             center: { x: drawTo.x, y: drawTo.y - 12 },
             radius: 16,
-            color: Black,
+            color: White,
         }
         Artillery -> Draw.circle! {
             center: { x: drawTo.x, y: drawTo.y - 12 },
             radius: 16,
             color: Maroon,
         }
-        Infantry -> Draw.rectangle! {
+        Infantry -> Draw.circle! {
             color: Red,
-            rect: {
-                width: 24,
-                height: 24,
-                x: drawTo.x - 12,
-                y: drawTo.y - 16,
-            }
+            center: { x: drawTo.x, y: drawTo.y - 12 },
+            radius: 16,
         }
     # Draw.rectangle! {
     #     color: readyColors.border,

@@ -1,6 +1,7 @@
 module [Unit, MoveChoice, Id, combatOrder, isAlive, takeHit, summary, reroute, update, make, moveTo, initial, updateMovement, updateReadiness]
 import Hex exposing [Doubled, Point, doubled, cubeLerp]
 import Utils exposing [frameCountToSeconds]
+import HexTile exposing [HexMap]
 import Health
 # import Assets
 # import w4.Sprite exposing [Sprite]
@@ -90,13 +91,13 @@ make = \{ type, id: inId, army, cell } ->
                 # sprite: Assets.horsey,
             }
 
-moveTo : Unit, Doubled, (Doubled -> Bool) -> Unit
-moveTo = |unit, dest, isOccupied|
+moveTo = |unit, dest, path_finder|
     from_cell = unit.cell
 
-    path = when unit.army is
-        Confederates -> Hex.findGraph2(from_cell, dest, isOccupied) ?? unit.lastPath
-        Union -> Hex.findGraph2(from_cell, dest, isOccupied) ?? unit.lastPath
+    # path = when unit.army is
+    #     Confederates -> Hex.findGraph2(from_cell, dest, isOccupied) ?? unit.lastPath
+    #     Union -> Hex.findGraph2(from_cell, dest, isOccupied) ?? unit.lastPath
+    path = path_finder(from_cell, dest)
 
     prev_cell = List.get(unit.lastPath, 1) |> Result.with_default(unit.cell)
     next_cell = List.get(path, 1) |> Result.with_default(unit.cell)
@@ -182,20 +183,19 @@ initial = |isOccupied| [
     make { id: 5, type: Cavalry, army: Union, cell: doubled 7 1 },
     make { id: 4, type: Infantry, army: Union, cell: doubled 7 3 },
     make { id: 3, type: Infantry, army: Union, cell: doubled 7 5 },
-    make { id: 6, type: Artillery, army: Confederates, cell: doubled -4 -6 },
-    make { id: 7, type: Cavalry, army: Confederates, cell: doubled -4 -8 },
-    make { id: 8, type: Infantry, army: Confederates, cell: doubled -5 -7 },
+    make { id: 6, type: Artillery, army: Confederates, cell: doubled -4 -2 },
+    make { id: 7, type: Cavalry, army: Confederates, cell: doubled -4 -4 },
+    make { id: 8, type: Infantry, army: Confederates, cell: doubled -5 -5 },
 ]
 
-updatePath: Unit, (Doubled -> Bool) -> Unit
-
-
-updateMovement : Unit -> Unit
-updateMovement = |unit|
+updateMovement : Unit, HexMap -> Unit
+updateMovement = |unit, map|
+    get_cost = HexTile.get_cell_cost map
     when unit.readiness is
         Ready | Cooldown _ -> unit
         Moving { start, end, t } ->
-            newT = t + 1/60 * unit.moveRate
+            movement_cost = get_cost unit.cell
+            newT = t + 1/60 * unit.moveRate / movement_cost
             newPos = Hex.pointLerp(start, end, newT)
             if newT >= 1 then
                 cell = Hex.pixelToHex(end)
@@ -373,16 +373,12 @@ summary = \unit, planned ->
     dest: {$(Num.to_str unit.dest.column),$(Num.to_str unit.dest.row)} $(distance)
     [$(List.len unit.lastPath |> Num.to_str):$(List.len planned |> Num.to_str)] {$(readyState)}
     """
-reroute : Unit, (Doubled -> Bool) -> Unit
-reroute = |unit, isOccupied|
+reroute = |unit, isOccupied, path_finder|
     when unit.readiness is
-        Moving { end, t } ->
+        Moving { end } ->
             if isOccupied(Hex.pixelToHex(end)) then
                 dbg "Re-routing unit ${Inspect.to_str unit.id} to ${Inspect.to_str unit.dest}"
-                moveTo(unit, unit.dest, isOccupied)
-                # { unit & lastPath: Hex.findGraph(unit.cell, unit.dest, isOccupied) |> Result.with_default [],
-                #     readiness: Moving { start: end, end: start, t: 1 - t}
-                # }
+                moveTo(unit, unit.dest, path_finder)
             else
                 unit
         _ -> unit
