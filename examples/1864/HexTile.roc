@@ -3,6 +3,7 @@ module [
   HexMap,
   Terrain,
   neighbors,
+  is_in_bounds,
   toggle_terrain,
   get_cell_cost,
   get_terrain,
@@ -31,6 +32,7 @@ HexMap : {
   # clamped: Doubled -> Bool,
   # neighbors: Doubled -> List Doubled,
   border: List Doubled,
+  launch_pads: List (List Doubled),
 }
 
 init: Doubled, Doubled -> HexMap
@@ -83,7 +85,15 @@ init = |min_cell, max_cell|
     max_cell,
     border,
     tiles,
+    launch_pads: [
+      [ doubled(0, -2), doubled(1, -1) ],
+      [ doubled(-2, 2), doubled(-1, 3) ],
+    ]
   }
+
+is_in_bounds = |map, cell|
+  clamped = Hex.clampCube map.min_cell map.max_cell
+  clamped cell
 
 terrain_from_tile = |{ min_cell, max_cell }|
   col_scale = 1/Num.to_f32(max_cell.column - min_cell.column)
@@ -92,7 +102,7 @@ terrain_from_tile = |{ min_cell, max_cell }|
   |cell|
     col_n = Num.to_f32(cell.column) * col_scale
     row_n = Num.to_f32(cell.row) * row_scale
-    noise = Noise.perlin2d(0.95 * col_n, 2.105 * row_n)
+    noise = 2 * Noise.perlin2d(1.05 * col_n, 1.125 * row_n)
 
     dbg "Got noise from ${col_n |> Num.to_str}, ${row_n|> Num.to_str} = ${Inspect.to_str noise}"
     { cell, terrain: terrain_from_height noise }
@@ -114,9 +124,9 @@ neighbors = |map|
     |> List.keep_if clamped
 
 terrain_from_height = |height|
-  if height < -0.5 then Water
-  else if height < -0.3 then Sand
-  else if height < -0.2 then Gravel
+  if height < -0.8 then Water
+  else if height < -0.7 then Sand
+  else if height < -0.4 then Gravel
   else if height < 0.2 then Stone
   else if height < 0.3 then Forest
   else if height < 0.4 then Pasture

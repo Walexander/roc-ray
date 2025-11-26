@@ -47,7 +47,6 @@ YearOfDecision : {
     hoverCell : Doubled,
     player: Hex.Point,
     playerVelocity: Hex.Point,
-    playerPath: Hex.Line,
     unit: Unit,
     map: HexMap,
     units: List Unit,
@@ -55,6 +54,7 @@ YearOfDecision : {
     camera_settings: CameraSettings,
     base_camera: CameraSettings,
     trauma: F32,
+    countdown: U32,
 
     # background: Sprite,
     # backgrounds: List Sprite,
@@ -169,7 +169,6 @@ init! = |{}|
         trauma: 0,
         map,
         playerVelocity: { x: 0, y: 0 },
-        playerPath: Hex.findPath (doubled 0 0) (doubled 0 0) |> Hex.pathToLine,
         screenState: TitleScreen { ready: WaitingBoth },
         border: Hex.border,
         camera_settings,
@@ -177,6 +176,7 @@ init! = |{}|
         camera,
         unit: List.first(units) |> Result.with_default unit,
         units ,
+        countdown: 5_000,
         hexTexture,
     }
     Ok baseState
@@ -200,14 +200,22 @@ render! = |model, pf|
     #             renderInGame state netplay model.frameCount
     #             |> Task.await \_ -> updateInGame state model.frameCount inputs model.inputs
 
+    dt = pf.timestamp.last_render_end - pf.timestamp.last_render_start
 
     isOccupied = \cube -> List.contains (model.units |> List.map .cell) cube
     path_finder = HexTile.make_path_finder model.map isOccupied
 
     mouse_world = RocRay.get_screen_to_world_2d! pf.mouse.position model.camera
 
-    mouseCell2 = pixelToHex mouse_world
-    selectedCell = if Mouse.released pf.mouse.buttons.left then mouseCell2 else model.selectedCell
+    hover_cell = pixelToHex mouse_world
+    mouseCell2 = if HexTile.is_in_bounds model.map (hover_cell) then
+        hover_cell
+    else
+        model.hoverCell
+    selectedCell = if Mouse.released pf.mouse.buttons.left then
+        mouseCell2
+    else
+        model.selectedCell
 
     summary_unit = if Mouse.released pf.mouse.buttons.left && isOccupied selectedCell then
         List.find_first(model.units, \unit -> unit.cell == selectedCell)
@@ -238,8 +246,10 @@ render! = |model, pf|
             when (List.find_first model.units |u| u.cell == mouseCell2) is
                 Ok unit -> SelectUnit unit.id
                 Err _ -> NoMove
+        else if hover_cell == model.hoverCell then
+            MoveTo model.hoverCell
         else
-            MoveTo mouseCell2
+            NoMove
     else if Keys.pressed pf.keys KeySpace then
         AddTrauma
     else
@@ -256,7 +266,11 @@ render! = |model, pf|
         # |> List.map(|unit| Unit.reroute unit isOccupied)
         |> |units|
             when player_move is
-                MoveTo dest -> List.map(units, |u| if u.id == model.selectedIndex then Unit.moveTo(u, dest, path_finder) else u)
+                MoveTo dest if dest == model.hoverCell -> List.map(units, |u| if u.id == model.selectedIndex then
+                    Unit.moveTo(u, dest, path_finder)
+                else
+                    u
+                )
                 _ -> units
 
 
@@ -272,10 +286,14 @@ render! = |model, pf|
     frequency = pf.frame_count |> Num.to_f32 |> Num.mul 15.5
     camera_settings = { old_settings &
         target: {
-            x: model.base_camera.target.x +
-                Noise.perlin2d(frequency, 0) * amplitude,
-            y: model.base_camera.target.y +
-                Noise.perlin2d(0, frequency) * amplitude
+            x: (model.base_camera.target.x +
+                if intensity > 0.1 then
+                    Noise.perlin2d(frequency, 0) * amplitude
+                else 0) |> Num.round |> Num.to_f32,
+            y: (model.base_camera.target.y +
+                if intensity > 0.1 then
+                    Noise.perlin2d(0, frequency) * amplitude
+                else 0) |> Num.round |> Num.to_f32,
         },
         rotation:
             model.base_camera.rotation +
@@ -297,6 +315,12 @@ render! = |model, pf|
             AddTrauma -> Hex.lerp model.trauma 1 0.5
             _ -> Num.max(model.trauma - 0.01, 0 ),
         units: updatedUnits,
+        countdown:
+            if Keys.pressed pf.keys KeyR then
+                model.countdown + 1_000
+            else
+                update_countdown(model.map, model.units, model.countdown, Num.to_u32 dt),
+
         map,
     }
 
@@ -335,9 +359,8 @@ render! = |model, pf|
                 if Keys.down pf.keys KeyLeftControl then
                     drawPath! straightLine White 5 Bool.false
                 else {}
-            # renderHexOutline! summary_unit.cell Hex.hexSize  White
                 renderHexOutline! Hex.pixelToHex(summary_unit.position) Hex.hexSize  Navy
-                renderHexOutline! summary_unit.dest Hex.hexSize Aqua
+                renderHexOutline! summary_unit.dest Hex.hexSize Teal
                 renderHexOutline! mouseCell2  (Hex.hexSize + 4) Red
                 List.for_each!(model.units, |unit| drawUnit! unit)
 
@@ -400,6 +423,7 @@ render! = |model, pf|
             },
             color: Teal,
         }
+        render_countdown! model.countdown screenDims
 
     Ok updated
 
@@ -407,17 +431,22 @@ renderHexOutline! = \cell, size, color ->
     points = Hex.hexPoints (Hex.hexToPixel cell) size
     drawPath! points color 3 Bool.true
 
-# renderMap! : (List HexTile), Doubled, _ -> Result _
-renderMap! = |tiles, selectedCell, texture|
-    _ = List.for_each_try!(tiles, |tile|
-        cell = tile.cell
-        tx_pos = HexTile.texture_position tile (Hex.hexSize * 2)
-        drawHex! cell texture tx_pos Black
-        Ok {}
-    )
-    # drawHex! selectedCell texture { x: -128, y: 4 * 128 } White
-    renderHexOutline! selectedCell Hex.hexSize Black
-    Ok {}
+render_countdown! = |countdown, dims|
+    diameter = 64
+    text_size = 64
+    center = { x: dims.width - diameter - 16, y: dims.height - diameter - 16 }
+    text = countdown |> Num.to_f32 |> Num.div 1_000 |> Num.ceiling |> Num.to_str
+    text_dims = Effect.measure_text! text text_size 1 |> InternalVector.to_vector2
+    Draw.circle!{ radius: diameter, center, color: White }
+    Draw.text!{
+        color: Red,
+        pos: {
+            x: center.x - text_dims.x / 2,
+            y: center.y - text_dims.y / 2,
+        },
+        size: text_size,
+        text
+    }
 
 render_map! = |hex_map, texture|
     List.concat(
@@ -429,9 +458,13 @@ render_map! = |hex_map, texture|
     )
     |> List.for_each!(|tile|
         tx_pos = HexTile.texture_position tile (Hex.hexSize * 2)
-        drawHex! tile.cell texture tx_pos Black
+        drawHex! tile.cell texture tx_pos White
     )
 
+    List.for_each!(List.join hex_map.launch_pads, |pad|
+        tx_pos = HexTile.texture_position { cell: pad, terrain: Lava } (Hex.hexSize * 2)
+        drawHex! pad texture tx_pos White
+    )
 
 drawPath! = |listOfPoints, color, thickness, connected|
     first = List.first listOfPoints ?? { x: 0, y: 0 }
@@ -527,6 +560,51 @@ drawHex! = |cell, texture, pos, color|
 #     sinceOver = (elapsedSince - elapsedSeconds)
 #     next = if sinceOver >= restartIn then baseState.screenState else GameOver state
 #     Task.ok next
+
+update_countdown = |hex_map, units, countdown, dt|
+    padOwners = List.map hex_map.launch_pads \pad ->
+        getPadOwner units pad
+    launch_state = getLaunchStatus padOwners
+    when launch_state is
+        InControl _ -> Num.max(dt, countdown) - dt |> Num.to_u32
+        _ -> countdown
+
+getPadOwner : List Unit, LaunchPad -> [Owned [Union, Confederates], Neutral]
+getPadOwner = |units, pad|
+    byArmy = List.walk pad [] |accum, cell|
+        List.find_first units |u| u.cell == cell
+        |> Result.map_ok |u| List.append accum u.army
+        |> Result.with_default accum
+
+    (union, confederates) = List.walk byArmy (0, 0) |accum, army|
+        when army is
+            Union -> (accum.0 + 1, accum.1)
+            Confederates -> (accum.0, accum.1 + 1)
+
+    if union == confederates then
+        Neutral
+    else if union > 0 and confederates == 0 then
+        Owned Union
+    else if confederates > 0 and union == 0 then
+        Owned Confederates
+    else
+        Neutral
+
+getLaunchStatus = \owners ->
+    (union, confederates) = countPadsByOwner owners
+    if union > confederates then
+        InControl Union
+    else if confederates > union then
+        InControl Confederates
+    else
+        StaleMate
+
+countPadsByOwner = \owners ->
+    List.walk owners (0, 0) \accum, owner ->
+        when owner is
+            Owned Union -> (accum.0 + 1, accum.1)
+            Owned Confederates -> (accum.0, accum.1 + 1)
+            Neutral -> accum
 
 # updateInGame = \model, frameCount, inputs, lastInputs ->
 #     padOwners = List.map model.map.launchPads \pad ->
@@ -1253,26 +1331,6 @@ updateFrameCount = |prev|
 # #         (Num.toU32 model.frameCount) % (Num.toU32 totalBackgrounds)
 # #         |> \index -> List.get model.backgrounds (Num.toU64 index)
 #
-# getPadOwner : List Unit, LaunchPad -> [Owned [Union, Confederates], Unowned]
-# getPadOwner = |units, pad|
-#     byArmy = List.walk pad [] |accum, cell|
-#         List.find_first units |u| u.cell == cell
-#         |> Result.map_ok |u| List.append accum u.army
-#         |> Result.with_default accum
-
-#     (union, confederates) = List.walk byArmy (0, 0) |accum, army|
-#         when army is
-#             Union -> (accum.0 + 1, accum.1)
-#             Confederates -> (accum.0, accum.1 + 1)
-
-#     if union == confederates then
-#         Unowned
-#     else if union > 0 and confederates == 0 then
-#         Owned Union
-#     else if confederates > 0 and union == 0 then
-#         Owned Confederates
-#     else
-#         Unowned
 
 getFirstMove = |forArmy, units|
     List.find_first units |{ army }| army == forArmy
@@ -1384,21 +1442,7 @@ newGame = |startFrame, player1Army, player2Army|
 #     else
 #         Unowned
 
-# countPadsByOwner = \owners ->
-#     List.walk owners (0, 0) \accum, owner ->
-#         when owner is
-#             Owned Union -> (accum.0 + 1, accum.1)
-#             Owned Confederates -> (accum.0, accum.1 + 1)
-#             Unowned -> accum
 
-# getLaunchStatus = \owners ->
-#     (union, confederates) = countPadsByOwner owners
-#     if union > confederates then
-#         InControl Union
-#     else if confederates > union then
-#         InControl Confederates
-#     else
-#         StaleMate
 
 # cellObstacle : List Doubled -> (Doubled -> Bool)
 # cellObstacle = \occupied -> \cell -> List.contains occupied cell
