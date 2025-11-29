@@ -1,7 +1,6 @@
-module [Unit, MoveChoice, Id, combatOrder, isAlive, takeHit, summary, reroute, update, make, moveTo, initial, updateMovement, updateReadiness]
-import Hex exposing [Doubled, Point, doubled, cubeLerp]
+module [Unit, MoveChoice, Id, combatOrder, isAlive, takeHit, summary, reroute, make, moveTo, initial, updateReadiness]
+import Hex exposing [Doubled, Point, doubled]
 import Utils exposing [frameCountToSeconds]
-import HexTile exposing [HexMap]
 import Health
 # import Assets
 # import w4.Sprite exposing [Sprite]
@@ -179,46 +178,14 @@ expect
     actual == expected
 
 # initial : ( \Hex.Doubled -> Bool ) -> List Unit
-initial = |isOccupied| [
-    make { id: 5, type: Cavalry, army: Union, cell: doubled 7 1 },
-    make { id: 4, type: Infantry, army: Union, cell: doubled 7 3 },
-    make { id: 3, type: Infantry, army: Union, cell: doubled 7 5 },
-    make { id: 6, type: Artillery, army: Confederates, cell: doubled -4 -2 },
-    make { id: 7, type: Cavalry, army: Confederates, cell: doubled -4 -4 },
-    make { id: 8, type: Infantry, army: Confederates, cell: doubled -5 -5 },
+initial = [
+    make { id: 5, type: Cavalry, army: Union, cell: doubled -1 -5 },
+    make { id: 4, type: Infantry, army: Union, cell: doubled 0 -6 },
+    make { id: 3, type: Infantry, army: Union, cell: doubled 1 -5 },
+    make { id: 6, type: Artillery, army: Confederates, cell: doubled -1 5 },
+    make { id: 7, type: Cavalry, army: Confederates, cell: doubled 0 6 },
+    make { id: 8, type: Infantry, army: Confederates, cell: doubled 1 5 },
 ]
-
-updateMovement : Unit, HexMap -> Unit
-updateMovement = |unit, map|
-    get_cost = HexTile.get_cell_cost map
-    when unit.readiness is
-        Ready | Cooldown _ -> unit
-        Moving { start, end, t } ->
-            movement_cost = get_cost unit.cell
-            newT = t + 1/60 * unit.moveRate / movement_cost
-            newPos = Hex.pointLerp(start, end, newT)
-            if newT >= 1 then
-                cell = Hex.pixelToHex(end)
-                position = Hex.hexToPixel cell
-                updated = when unit.lastPath is
-                    [_, _] | [_] | [] -> { unit & position, cell, lastPath: [], readiness: Cooldown(unit.cooldownRate |> Num.round) }
-                    [_, to, next, ..] -> {unit &
-                        cell: to,
-                        position: Hex.hexToPixel to,
-                        lastPath: List.drop_first unit.lastPath 1,
-                        readiness: Moving({ start: Hex.hexToPixel to, end: Hex.hexToPixel next, t: 0 })
-                    }
-
-                updated
-            else
-                { unit &
-                    position: newPos,
-                    cell: Hex.pixelToHex(unit.position),
-                    readiness: Moving {
-                        start, end, t: newT
-                    }
-                }
-
 
 updateReadiness: Unit -> Unit
 updateReadiness = |unit|
@@ -271,7 +238,6 @@ update = \original, frameCount, move, cannotMoveTo ->
         ProceedTo _ nextCell destination path if moveCountDown == 0 ->
             dest_coords = Hex.hexToPixel nextCell
             f = Hex.subPoint original.position dest_coords
-            dot_to = Hex.dot (Hex.subPoint position dest_coords) f
 
             { original &
                 cell: nextCell,

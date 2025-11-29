@@ -412,6 +412,18 @@ extern "C" fn roc_fx_draw_circle_gradient(
     }
 }
 
+// RLAPI void DrawCircleLinesV(Vector2 center, float radius, Color color);                                  // Draw circle outline (Vector version)
+#[no_mangle]
+extern "C" fn roc_fx_draw_circle_lines(center: &glue::RocVector2, radius: f32, color: glue::RocColor) {
+    if let Err(msg) = platform_mode::update(PlatformEffect::DrawCircleGradient) {
+        display_fatal_error_message(msg, ExitErrCode::EffectNotPermitted);
+    }
+
+    unsafe {
+        raylib::DrawCircleLinesV(center.into(), radius, color.into());
+    }
+}
+
 #[no_mangle]
 extern "C" fn roc_fx_draw_rectangle_gradient_v(
     rect: &glue::RocRectangle,

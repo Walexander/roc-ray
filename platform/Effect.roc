@@ -28,6 +28,7 @@ hosted [
     draw_rectangle_gradient_h!,
     draw_circle!,
     draw_circle_gradient!,
+    draw_circle_lines!,
     set_target_fps!,
     set_draw_fps!,
     take_screenshot!,
@@ -139,6 +140,7 @@ draw_rectangle_gradient_v! : RocRectangle, RocColor, RocColor => {}
 draw_rectangle_gradient_h! : RocRectangle, RocColor, RocColor => {}
 draw_circle! : RocVector2, F32, RocColor => {}
 draw_circle_gradient! : RocVector2, F32, RocColor, RocColor => {}
+draw_circle_lines! : RocVector2, F32, RocColor => {}
 
 set_target_fps! : I32 => {}
 set_draw_fps! : Bool, RocVector2 => {}

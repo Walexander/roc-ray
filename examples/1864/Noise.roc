@@ -1,4 +1,4 @@
-module [perlin2d]
+module [perlin2d, seeded_perlin2d]
 import Hex
 perm_ : List I32
 perm_ = [
@@ -26,24 +26,52 @@ perm = List.concat(perm_, perm_)
 fade = |t|
   t * t * t * (t * (t * 6 - 15) + 10)
 
-grad = |hash, x, y|
-  h = Num.bitwise_and hash 15
-  when h is
-      0 ->  x + y
-      1 -> -x + y
-      2 ->  x - y
-      3 -> -x - y
-      4 ->  x
-      5 -> -x
-      6 ->  y
-      7 -> -y
-      8 ->  x + 0.5 * y
-      9 -> -x + 0.5 * y
-      10 -> 0.5 * x - y
-      11 -> -0.5 * x - y
-      _ -> x + y
+grad_seed = |seed|
+  |hash, x, y|
+    # h = Num.bitwise_and hash 15
+    h =  Num.round x |> Num.add (Num.round y) |> Num.add_wrap(hash + seed) |> Num.bitwise_and 15
+    # x_ = Num.to_i32(x) |> Num.add_wrap (Num.to_i32 y) |> Num.add_wrap(hash + seed * 3746193)
+    # h_ = Num.bitwise_xor(x, Num.shift_left_by x 13) |> Num.mul 15731 |> Num.add 789221
+    #   |> Num.rem 1000
+    #   |> Num.to_f32
+    #   |> Num.div 1000
+    #   |> Num.sub 0.5
+    # dbg "H is ${h_|> Num.to_str} vs ${Inspect.to_str h}"
+    when h is
+        0 ->  x + y
+        1 -> -x + y
+        2 ->  x - y
+        3 -> -x - y
+        4 ->  x
+        5 -> -x
+        6 ->  y
+        7 -> -y
+        8 ->  x + 0.5 * y
+        9 -> -x + 0.5 * y
+        10 -> 0.5 * x - y
+        11 -> -0.5 * x - y
+        _ -> x + y
+
+# seeded_perlin2d : I32 -> F32, F32 -> F32
+seeded_perlin2d = |seed|
+  grad_ = grad_seed seed
+  |xin, yin|
+    perlin2d_ grad_ xin yin
+
+
+hash_ = |input|
+  x = input.x + input.seed |> Num.mul_wrap 374613993
+  x_ = Num.shift_left_by x 13
+  Num.bitwise_xor x  x_ |> Num.mul_wrap 15731 |> Num.add 789221
+
+
+
 perlin2d : F32, F32 -> F32
+
 perlin2d = |xin, yin|
+  perlin2d_ (grad_seed 1) xin yin
+
+perlin2d_ = |grad, xin, yin|
   xi = Num.floor xin |> Num.bitwise_and 255
   yi = Num.floor yin |> Num.bitwise_and 255
   xf = xin - (Num.floor xin |> Num.to_f32)
@@ -68,5 +96,4 @@ perlin2d = |xin, yin|
 
   x1 = Hex.lerp(grad(aa, xf, yf), grad(ba, (xf - 1.0), yf), u)
   x2 = Hex.lerp(grad(ab, xf, (yf - 1)), grad(bb, (xf - 1.0), (yf - 1)), u)
-
   Hex.lerp x1 x2 v

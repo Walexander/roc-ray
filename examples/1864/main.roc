@@ -1,103 +1,30 @@
 app [Model, init!, render!] { rr: platform "../../platform/main.roc" }
 # import Utils exposing [frameCountToSeconds]
 import Unit exposing [Unit]
+import GameActions
 # import Assets
 import Hex exposing [Doubled, doubled, hexToPixel, pixelToHex]
-import HexTile exposing [HexTile, HexMap]
+import HexTile
 
 import Noise
 import rr.Draw
-import rr.RocRay exposing [ Camera, Vector2 ]
+import rr.RocRay exposing [ PlatformState ]
 import rr.InternalVector
 import rr.Effect
 import rr.Keys
 import rr.Camera
 import rr.Mouse
+import rr.Sound
 import rr.Texture
+import Model exposing [ YearOfDecision ]
+import Movement
+import Trauma
+import LaunchStatus
+import LaunchCountdown
+import Animation
 
-# import Drawing
-# import Health
-
-Army : [Union, Confederates]
-# Palette : {
-#     color1 : U32,
-#     color2 : U32,
-#     color3 : U32,
-#     color4 : U32,
-# }
-ScreenState : [
-    TitleScreen TitleState,
-    InGame GameState,
-    GameOver GameOverState,
-]
-CameraSettings: {
-        target : Vector2,
-        offset : Vector2,
-        rotation : F32,
-        zoom : F32,
-}
-YearOfDecision : {
-    frameCount : U64,
-    # inputs : (W4.Gamepad, W4.Gamepad),
-    # lastInputs : (W4.Gamepad, W4.Gamepad),
-    selectedIndex: I8,
-    border: List Doubled,
-    hexTexture : RocRay.Texture,
-    selectedCell : Doubled,
-    hoverCell : Doubled,
-    player: Hex.Point,
-    playerVelocity: Hex.Point,
-    unit: Unit,
-    map: HexMap,
-    units: List Unit,
-    camera: Camera,
-    camera_settings: CameraSettings,
-    base_camera: CameraSettings,
-    trauma: F32,
-    countdown: U32,
-
-    # background: Sprite,
-    # backgrounds: List Sprite,
-    screenState : ScreenState,
-}
 Model : YearOfDecision
-TitleState : {
-    ready : [
-        WaitingBoth,
-        Ready [Union, Confederates],
-        BothReady,
-    ],
-}
-GameOverState : {
-    winner : [Union, Confederates],
-    restartIn : U32,
-    elapsed : U64,
-}
-
 LaunchPad : List Doubled
-LaunchPads : List LaunchPad
-Map : {
-    obstacles : List Doubled,
-    launchPads : LaunchPads,
-}
-GameState : {
-    map : Map,
-    startFrame : U64,
-    launchTimer : U16,
-    units : List Unit,
-    armies : (Army, Army),
-    launchIn : U16,
-
-    hovering : {
-        union : Doubled,
-        confederate : Doubled,
-    },
-    unitIndex : {
-        union : U64,
-        confederate : U64,
-    },
-    moves : (Unit.MoveChoice, Unit.MoveChoice),
-}
 
 palette = {
     color1: 0xfce4a8,
@@ -126,316 +53,312 @@ defaultGamepad = {
     button2: Bool.false,
 }
 
-screenDims = {
+screen = {
     width: 1024,
     height: 768
 }
-init! : {} => Result Model _
+
+camera_settings = {
+    target: { x: 0.0, y: 0 },
+    offset: {x: screen.width / 2, y: screen.height / 2 - 80},
+    zoom: 0.55,
+    rotation: 0
+}
+init! : {} => Result YearOfDecision _
 init! = |{}|
-    RocRay.init_window! { width: screenDims.width, height: screenDims.height, title: "Stupid STuff" }
-    RocRay.set_target_fps! 24
+    RocRay.init_window! { width: screen.width, height: screen.height, title: "Stupid STuff" }
+    RocRay.set_target_fps! 60
     hexTexture = Texture.load!("examples/1864/assets/Flat/hex-tiles-no-outline.png")?
-    camera_settings = {
-        target: { x: 0.0, y: 0 },
-        offset: {x: screenDims.width / 2, y: screenDims.height / 2 - 100},
-        zoom: 0.55,
-        rotation: 0
-    }
     camera = Camera.create!(camera_settings)?
-
-    obstacles = [ doubled(0, 4), ] #, (doubled -3 -1), (doubled 3 -1) ]
-        |> List.map |seed| List.append (Hex.neighborsOf seed) seed
-        |> List.join
-
-    map = HexTile.init(doubled(-8, -6), doubled(8, 6))
-
-    isOccupied = \cube -> List.contains obstacles cube
-
-    unit = Unit.make {
-            id: 1,
-            army: Union,
-            cell: Hex.doubled(7, -7),
-            type: Cavalry,
-        }
-
-    units = Unit.initial isOccupied
-    baseState : Model
-    baseState = {
-        frameCount: Num.to_u64 0,
-        hoverCell: doubled 0 0,
-        selectedCell: doubled 0 0,
-        selectedIndex: 0,
-        player: { x: 0, y: 0 },
-        trauma: 0,
-        map,
-        playerVelocity: { x: 0, y: 0 },
-        screenState: TitleScreen { ready: WaitingBoth },
-        border: Hex.border,
-        camera_settings,
-        base_camera: camera_settings,
-        camera,
-        unit: List.first(units) |> Result.with_default unit,
-        units ,
-        countdown: 5_000,
-        hexTexture,
-    }
+    zap = Sound.load!("examples/assets/sound/sound.wav")?
+    ok =  Sound.load!("examples/1864/assets/yessir.mp3")?
+    horse = Sound.load!("examples/1864/assets/horse.mp3")?
+    wagon = Sound.load!("examples/1864/assets/wagon.mp3")?
+    baseState : YearOfDecision
+    baseState = Model.initialize! camera hexTexture { zap, ok, horse, wagon } camera_settings
     Ok baseState
 
-render! : Model, RocRay.PlatformState => Result Model []
+
+render! : YearOfDecision, RocRay.PlatformState => Result YearOfDecision []
 render! = |model, pf|
-    # inputs = getPlayerInputs!
-    # netplay = W4.getNetplay!
-
-    # screenState =
-    #     when model.screenState is
-    #         TitleScreen state ->
-    #             renderTitleScreen state model.frameCount
-    #             |> Task.await \_ -> updateTitle state inputs model.inputs model.frameCount
-
-    #         GameOver state ->
-    #             renderGameOver state model.frameCount
-    #             |> Task.await \_ -> updateGameOver state model.frameCount
-
-    #         InGame state ->
-    #             renderInGame state netplay model.frameCount
-    #             |> Task.await \_ -> updateInGame state model.frameCount inputs model.inputs
-
     dt = pf.timestamp.last_render_end - pf.timestamp.last_render_start
 
-    isOccupied = \cube -> List.contains (model.units |> List.map .cell) cube
+
+    isOccupied = |cube| List.contains (model.units |> List.map .cell) cube
     path_finder = HexTile.make_path_finder model.map isOccupied
-
+    unit_from_cell = |cell| List.find_first model.units |u| u.cell == cell
     mouse_world = RocRay.get_screen_to_world_2d! pf.mouse.position model.camera
-
     hover_cell = pixelToHex mouse_world
+
     mouseCell2 = if HexTile.is_in_bounds model.map (hover_cell) then
         hover_cell
     else
         model.hoverCell
+
     selectedCell = if Mouse.released pf.mouse.buttons.left then
         mouseCell2
     else
         model.selectedCell
 
-    summary_unit = if Mouse.released pf.mouse.buttons.left && isOccupied selectedCell then
-        List.find_first(model.units, \unit -> unit.cell == selectedCell)
+    countdown_pct = Num.max(0, 1 - (Num.to_f32 model.countdown / Num.to_f32 model.countdown_start))
+    intensity = update_camera! model pf
+    debugText =
+        """
+            Mouse to World: ( $(Num.round mouse_world.x|>Num.to_str), ${ Num.round mouse_world.y |> Num.to_str } )
+            Countdown = ${model.countdown |> Num.to_str}
+            Pct=${countdown_pct |> Num.mul 100 |> to_fixed 0}%, Seed = ${model.seed |> Num.to_str}; A=${intensity|>to_fixed 3}
+            Trauma=${model.trauma |> to_fixed 3}
+        """
+    player_move_ = GameActions.inputs_to_move(model, isOccupied, unit_from_cell, mouse_world, pf.keys, pf.mouse.buttons)
+
+    world: YearOfDecision
+    world = model
+        |> Trauma.process_trauma player_move_
+        |> LaunchStatus.update
+        |> LaunchCountdown.update(Num.to_u32 dt)
+        |> Movement.update(dt, isOccupied, path_finder)
+        |> GameActions.update!(player_move_, path_finder)
+        |> |world_|  { world_ & hoverCell: mouseCell2, selectedCell }
+        |> |world_| { world_ &
+            glowing:
+                when player_move_ is
+                    MoveUnit { to } -> Running (to, Animation.make {
+                        start_time: pf.timestamp.last_render_end,
+                        frame_count: 8,
+                        fps: 8,
+                    })
+                    _ -> when world_.glowing is
+                        Running (cell, anim) ->
+                            duration = pf.timestamp.last_render_end - anim.start_time
+                            if (duration) >= 2_000 then
+                                None
+                            else
+                                processed = Animation.process anim dt
+                                Running (cell, processed)
+                        None -> when player_move_ is
+                            _ -> world_.glowing
+
+        }
+
+
+    Draw.draw! Black |{}|
+        render_game! world  pf path_finder
+        render_trauma_bar! world.trauma intensity
+        render_debug! world  pf.mouse.position pf.keys debugText
+
+    render_sound! world player_move_
+
+    Ok world
+
+render_debug! = |model, mouse_pos, keys, debug_text|
+    unit_finder = |id| |u| u.id == id
+    Draw.circle! {
+        center: mouse_pos,
+        color: Red,
+        radius: 5,
+    }
+
+    summary_unit_ = List.find_first(model.units, unit_finder model.selectedIndex)
+    summary_unit = summary_unit_
         |> Result.on_err |_| List.first model.units
-        |> Result.with_default model.unit
-    else
-        List.find_first(model.units, |unit|
-            unit.id == model.selectedIndex
-        )
-        |> Result.on_err |_| List.first model.units
-        |> Result.with_default model.unit
+        |> |result|
+            when result is
+                Ok u -> u
+                Err _ -> crash "must have non empty unit list"
 
     summary_text =
     """
     Unit Summary: ${ Unit.summary summary_unit [] }
-    ${Inspect.to_str summary_unit.position} ${straightLine |> List.len|> Num.to_str}
     """
     summary_text_color = if summary_unit.army == Confederates then Red else Silver
-    player_move = if Mouse.pressed pf.mouse.buttons.left then
-        if Keys.down pf.keys KeyLeftShift then
-            point = Hex.hexToPixel mouseCell2
-            noise = Noise.perlin2d(point.x / screenDims.width, frequency * point.y / screenDims.height) |> Num.mul (12) |> Num.round
-            dbg "toggling obstacle@${Inspect.to_str mouseCell2} / ${frequency|>Num.to_str}, ${Inspect.to_str point} = ${noise |> Num.to_str}"
-            ToggleTerrain mouseCell2 HexTile.random_terrain(
-                pf.frame_count
-            )
-        else if isOccupied mouseCell2 then
-            when (List.find_first model.units |u| u.cell == mouseCell2) is
-                Ok unit -> SelectUnit unit.id
-                Err _ -> NoMove
-        else if hover_cell == model.hoverCell then
-            MoveTo model.hoverCell
-        else
-            NoMove
-    else if Keys.pressed pf.keys KeySpace then
-        AddTrauma
+    summary_text_dims = Effect.measure_text! summary_text 24 1 |> InternalVector.to_vector2
+    Draw.text! { pos: { x: 128+10, y: screen.height - (Num.to_f32 summary_text_dims.y + 24) }, text: summary_text, size: 24, color: summary_text_color }
+    debug_text_dims = Effect.measure_text! debug_text 24 1 |> InternalVector.to_vector2
+
+    if Keys.down keys KeyLeftShift then
+        debug_pos = {
+            x: screen.width - (Num.to_f32 debug_text_dims.x) - 48,
+            y: screen.height - (Num.to_f32 debug_text_dims.y) - 24
+        }
+        Draw.text! {
+            pos: debug_pos, text: debug_text, size: 24, color: White }
     else
-        NoMove
-
-
-    updatedUnits =
-        model.units
-        |> List.map(|unit|
-            Unit.updateMovement(unit, map)
-            |> Unit.reroute (|u| if unit.cell == u then Bool.false else isOccupied u) path_finder
-            |> Unit.updateReadiness
-        )
-        # |> List.map(|unit| Unit.reroute unit isOccupied)
-        |> |units|
-            when player_move is
-                MoveTo dest if dest == model.hoverCell -> List.map(units, |u| if u.id == model.selectedIndex then
-                    Unit.moveTo(u, dest, path_finder)
-                else
-                    u
-                )
-                _ -> units
-
-
-    map =
-        when player_move is
-            ToggleTerrain cell terrain ->
-                HexTile.toggle_terrain model.map cell terrain
-            _ -> model.map
-
-    old_settings = model.camera_settings
-    intensity = model.trauma * model.trauma * model.trauma
-    amplitude = 40.0 * intensity
-    frequency = pf.frame_count |> Num.to_f32 |> Num.mul 15.5
-    camera_settings = { old_settings &
-        target: {
-            x: (model.base_camera.target.x +
-                if intensity > 0.1 then
-                    Noise.perlin2d(frequency, 0) * amplitude
-                else 0) |> Num.round |> Num.to_f32,
-            y: (model.base_camera.target.y +
-                if intensity > 0.1 then
-                    Noise.perlin2d(0, frequency) * amplitude
-                else 0) |> Num.round |> Num.to_f32,
-        },
-        rotation:
-            model.base_camera.rotation +
-            Noise.perlin2d(frequency, frequency) * amplitude * 0.075
-
-    }
-    Camera.update!(model.camera, camera_settings)
-
-    updated = { model &
-        hoverCell: mouseCell2,
-        selectedCell,
-        unit: summary_unit,
-        camera_settings: camera_settings,
-
-        selectedIndex: when player_move is
-            SelectUnit id -> id
-            _ -> summary_unit.id,
-        trauma: when player_move is
-            AddTrauma -> Hex.lerp model.trauma 1 0.5
-            _ -> Num.max(model.trauma - 0.01, 0 ),
-        units: updatedUnits,
-        countdown:
-            if Keys.pressed pf.keys KeyR then
-                model.countdown + 1_000
-            else
-                update_countdown(model.map, model.units, model.countdown, Num.to_u32 dt),
-
-        map,
-    }
-
-    hoverCellPoint = hexToPixel mouseCell2
-    distance = Hex.hexDistance mouseCell2 selectedCell
-
-    cubePath = path_finder(Hex.pixelToHex(summary_unit.position), mouseCell2)
-
-    straightLine = cubePath
-        |> List.map |point|
-            Hex.hexToPixel point
-
-    unitPath_ =
-        summary_unit.lastPath
-        |> List.map Hex.hexToPixel
-        |> List.drop_first 1
-        |> List.prepend (summary_unit.position)
-
-
-    m_dist = Hex.hexToPixel summary_unit.cell |> Hex.subPoint (Hex.hexToPixel mouseCell2) |> Hex.magnitude
-    debugText =
-    """
-        { $(Num.to_str mouseCell2.column), ${Num.to_str mouseCell2.row} } { ${Num.to_str selectedCell.column}, $(Num.to_str selectedCell.row) }; d=$( Num.to_str distance ), $( Num.to_str (Num.round (hoverCellPoint.y)) ) world
-        Mouse to World: ( $(Num.round mouse_world.x|>Num.to_str), ${ Num.round mouse_world.y |> Num.to_str } )
-        Mag: ${Inspect.to_str m_dist}
-    """
-
-
-    Draw.draw! Black |{}|
-        Draw.with_mode_2d!
-            model.camera
-            |{}|
-                render_map! model.map model.hexTexture
-
-                drawPath! unitPath_ Navy 5 Bool.false
-                if Keys.down pf.keys KeyLeftControl then
-                    drawPath! straightLine White 5 Bool.false
-                else {}
-                renderHexOutline! Hex.pixelToHex(summary_unit.position) Hex.hexSize  Navy
-                renderHexOutline! summary_unit.dest Hex.hexSize Teal
-                renderHexOutline! mouseCell2  (Hex.hexSize + 4) Red
-                List.for_each!(model.units, |unit| drawUnit! unit)
-
-        if Keys.down pf.keys KeyLeftShift then
-            Draw.text! { pos: { x: 400, y: 600 }, text: debugText, size: 24, color: White }
-        else
-            {}
-        Draw.circle! {
-            center: pf.mouse.position,
-            color: Red,
-            radius: 5,
-        }
-        summary_text_dims = Effect.measure_text! summary_text 24 1 |> InternalVector.to_vector2
-        Draw.text! { pos: { x: 128+10, y: screenDims.height - (Num.to_f32 summary_text_dims.y + 24) }, text: summary_text, size: 24, color: summary_text_color }
-        gauge_size = screenDims.height - 84 - 16
-        gauge_width = 16
-
-        Draw.rectangle!{
-            rect: {
-                x: 8,
-                y: 32,
-                height: gauge_size + 16,
-                width: gauge_width * 2 + 3 * 4,
-            },
-            color: White,
-        }
-        Draw.rectangle!{
-            rect: {
-                x: 8 + 4,
-                y: 32 + 4,
-                height: gauge_size + 4,
-                width: gauge_width,
-            },
-            color: Black,
-        }
-        Draw.rectangle!{
-            rect: {
-                x: 8 + 6,
-                y: 32 + 6 + ( gauge_size - gauge_size * model.trauma - 2) ,
-                height: gauge_size * model.trauma + 2,
-                width: gauge_width - 4,
-            },
-            color: Red,
-        }
-        Draw.rectangle!{
-            rect: {
-                x: 8 + 8 + gauge_width,
-                y: 32 + 4,
-                height: gauge_size + 4,
-                width: gauge_width,
-            },
-            color: Black,
-        }
-        Draw.rectangle!{
-            rect: {
-                x: 8 + 8 + gauge_width + 2,
-                y: 32 + 6 + ( gauge_size - gauge_size * intensity - 2) ,
-                height: gauge_size * intensity + 2,
-                width: gauge_width - 4,
-            },
-            color: Teal,
-        }
-        render_countdown! model.countdown screenDims
-
-    Ok updated
+        {}
 
 renderHexOutline! = \cell, size, color ->
     points = Hex.hexPoints (Hex.hexToPixel cell) size
     drawPath! points color 3 Bool.true
 
-render_countdown! = |countdown, dims|
-    diameter = 64
-    text_size = 64
-    center = { x: dims.width - diameter - 16, y: dims.height - diameter - 16 }
-    text = countdown |> Num.to_f32 |> Num.div 1_000 |> Num.ceiling |> Num.to_str
+
+to_fixed = |num, precision|
+    mul = Num.pow 10 precision
+    num |> Num.to_f32 |> Num.mul mul |> Num.round |> Num.to_f32 |> Num.div mul |> Num.to_str
+
+# render_game! : YearOfDecision, PlatformState, _ -> _
+render_game! : YearOfDecision, PlatformState, _ => _
+render_game! = |model, pf, path_finder|
+    summary_unit = List.find_first(model.units, |unit| unit.id == model.selectedIndex)
+        |> Result.on_err |_| List.first model.units
+        |> |result|
+            when result is
+                Ok u -> u
+                Err _ -> crash "must have non empty unit list"
+    straightLine = cubePath |> List.map |point| Hex.hexToPixel point
+    cubePath = path_finder(Hex.pixelToHex(summary_unit.position), model.hoverCell)
+    unitPath_ =
+        summary_unit.lastPath
+        |> List.map Hex.hexToPixel
+        |> List.drop_first 1
+        |> List.prepend (summary_unit.position)
+    Draw.with_mode_2d!
+        model.camera
+        |{}|
+            render_map! model.map model.hexTexture
+
+
+            if Keys.down pf.keys KeyLeftControl then
+                drawPath! straightLine Navy 5 Bool.false
+            else {}
+
+            max_radius = 64
+            drawPath! unitPath_ White 5 Bool.false
+            #renderHexOutline! model.hoverCell  (Hex.hexSize + 4) Navy
+            List.range { start: At 0, end: Before 8 }
+                |> List.for_each! |i|
+                    Draw.circle_lines! {
+                        center: Hex.hexToPixel model.hoverCell ,
+                        color: Navy,
+                        radius: Num.to_f32 (max_radius + i)
+                    }
+
+            (center, radius) = when model.glowing is
+                None ->
+                    c = Hex.hexToPixel summary_unit.dest
+                    (c, max_radius)
+                Running (cell, anim) ->
+                    c = Hex.hexToPixel cell
+                    (c, max_radius |> Num.to_f32 |> Num.div 8 |> Num.mul (Num.to_f32 anim.frame_index) |> Num.round)
+
+            List.range { start: At 0, end: Before 8 }
+                |> List.for_each! |i|
+                    Draw.circle_lines! {
+                        center,
+                        color: RGBA(250, 250, 250, 255),
+                        radius: Num.to_f32 (max_radius + i)
+                    }
+                    Draw.circle_lines! {
+                        center,
+                        color: RGBA(255, 250, 250, 255),
+                        radius: Num.to_f32 (radius - 8 - i)
+                    }
+                    Draw.circle_lines! {
+                        center,
+                        color: RGBA(255, 250, 250, 255),
+                        radius: Num.to_f32 (radius - i)
+                    }
+            List.for_each!(model.units, |unit| drawUnit! unit)
+            render_countdown! model.countdown
+    {}
+
+render_sound! = |model, player_move|
+    when player_move is
+        MoveUnit {unit_index} ->
+            List.find_first model.units |u| u.id == unit_index
+            |> Result.map_ok |{type}|
+                when type is
+                    Cavalry -> model.sounds.horse
+                    Infantry -> model.sounds.ok
+                    Artillery -> model.sounds.wagon
+            |> Result.with_default model.sounds.ok
+            |> Sound.play!
+        _ -> {}
+
+update_camera! = |model, pf|
+    old_settings = model.base_camera
+    intensity = model.trauma * model.trauma * model.trauma
+    amplitude = 20.0 * intensity
+    frequency = pf.frame_count |> Num.to_f32 |> Num.mul 15.5
+    _ = if pf.frame_count % 60 == 0 then
+        dbg "pf.last_render_end = ${Inspect.to_str pf.timestamp.last_render_end}, frame_count = ${Inspect.to_str pf.frame_count}"
+    else ""
+    updated_camera_settings = { old_settings &
+        target: {
+            x: (model.base_camera.target.x + Noise.perlin2d(frequency, 0) * amplitude)
+                |> Num.round |> Num.to_f32,
+            y: (model.base_camera.target.y + Noise.perlin2d(0, frequency) * amplitude)
+                |> Num.round |> Num.to_f32,
+        },
+        rotation:
+            model.base_camera.rotation +
+            Noise.perlin2d(frequency, frequency) * 5 * intensity
+
+    }
+    Camera.update!(model.camera, updated_camera_settings)
+    intensity
+
+render_trauma_bar! = |trauma, intensity|
+    gauge_size = screen.height - 84 - 16
+    gauge_width = 16
+
+    Draw.rectangle!{
+        rect: {
+            x: 8,
+            y: 32,
+            height: gauge_size + 16,
+            width: gauge_width * 2 + 3 * 4,
+        },
+        color: White,
+    }
+    Draw.rectangle!{
+        rect: {
+            x: 8 + 4,
+            y: 32 + 4,
+            height: gauge_size + 4,
+            width: gauge_width,
+        },
+        color: Black,
+    }
+    Draw.rectangle!{
+        rect: {
+            x: 8 + 6,
+            y: 32 + 6 + ( gauge_size - gauge_size * trauma - 2) ,
+            height: gauge_size * trauma + 2,
+            width: gauge_width - 4,
+        },
+        color: Red,
+    }
+    Draw.rectangle!{
+        rect: {
+            x: 8 + 8 + gauge_width,
+            y: 32 + 4,
+            height: gauge_size + 4,
+            width: gauge_width,
+        },
+        color: Black,
+    }
+    Draw.rectangle!{
+        rect: {
+            x: 8 + 8 + gauge_width + 2,
+            y: 32 + 6 + ( gauge_size - gauge_size * intensity - 2) ,
+            height: gauge_size * intensity + 2,
+            width: gauge_width - 4,
+        },
+        color: Teal,
+    }
+
+render_countdown! = |countdown|
+    diameter = 128
+    text_size = 128
+    center = { x: 0 , y: 0 }
+    text = countdown |> Num.to_f32
+        |> Num.div 1_00
+        |> Num.round
+        |> |c|
+            if c < 100 && c > 0 then
+                (Num.to_f32 c / 10) |> Num.to_str |>
+                |s| if Str.to_utf8 s |> List.len <= 1 then Str.concat s ".0" else s
+            else
+                Num.ceiling(Num.to_f32 c/10)|>Num.to_f32 |> Num.to_str
     text_dims = Effect.measure_text! text text_size 1 |> InternalVector.to_vector2
     Draw.circle!{ radius: diameter, center, color: White }
     Draw.text!{
@@ -463,6 +386,10 @@ render_map! = |hex_map, texture|
 
     List.for_each!(List.join hex_map.launch_pads, |pad|
         tx_pos = HexTile.texture_position { cell: pad, terrain: Lava } (Hex.hexSize * 2)
+        drawHex! pad texture tx_pos White
+    )
+    List.for_each!(hex_map.center, |pad|
+        tx_pos = HexTile.texture_position { cell: pad, terrain: Basalt } (Hex.hexSize * 2)
         drawHex! pad texture tx_pos White
     )
 
@@ -560,51 +487,6 @@ drawHex! = |cell, texture, pos, color|
 #     sinceOver = (elapsedSince - elapsedSeconds)
 #     next = if sinceOver >= restartIn then baseState.screenState else GameOver state
 #     Task.ok next
-
-update_countdown = |hex_map, units, countdown, dt|
-    padOwners = List.map hex_map.launch_pads \pad ->
-        getPadOwner units pad
-    launch_state = getLaunchStatus padOwners
-    when launch_state is
-        InControl _ -> Num.max(dt, countdown) - dt |> Num.to_u32
-        _ -> countdown
-
-getPadOwner : List Unit, LaunchPad -> [Owned [Union, Confederates], Neutral]
-getPadOwner = |units, pad|
-    byArmy = List.walk pad [] |accum, cell|
-        List.find_first units |u| u.cell == cell
-        |> Result.map_ok |u| List.append accum u.army
-        |> Result.with_default accum
-
-    (union, confederates) = List.walk byArmy (0, 0) |accum, army|
-        when army is
-            Union -> (accum.0 + 1, accum.1)
-            Confederates -> (accum.0, accum.1 + 1)
-
-    if union == confederates then
-        Neutral
-    else if union > 0 and confederates == 0 then
-        Owned Union
-    else if confederates > 0 and union == 0 then
-        Owned Confederates
-    else
-        Neutral
-
-getLaunchStatus = \owners ->
-    (union, confederates) = countPadsByOwner owners
-    if union > confederates then
-        InControl Union
-    else if confederates > union then
-        InControl Confederates
-    else
-        StaleMate
-
-countPadsByOwner = \owners ->
-    List.walk owners (0, 0) \accum, owner ->
-        when owner is
-            Owned Union -> (accum.0 + 1, accum.1)
-            Owned Confederates -> (accum.0, accum.1 + 1)
-            Neutral -> accum
 
 # updateInGame = \model, frameCount, inputs, lastInputs ->
 #     padOwners = List.map model.map.launchPads \pad ->
@@ -837,626 +719,7 @@ countPadsByOwner = \owners ->
 #     height: Num.toU32 100,
 # }
 
-updateFrameCount = |prev|
-    frameCount = Num.add_wrap prev.frameCount 1
-    { prev & frameCount }
-
-# # getCurrentPlayer : _ -> [Player1, Player2]
-# getCurrentPlayer = \netplay ->
-#     when netplay is
-#         Enabled p -> p
-#         _ -> Player1
-
-# getPlayerInputs =
-#     p1 = W4.getGamepad! Player1
-#     p2 = W4.getGamepad! Player2
-#     Task.ok (p1, p2)
-
-# padFor = \string, size ->
-#     strLen = Str.countUtf8Bytes string
-#     diff = (size - strLen)
-#     if diff <= 0 then
-#         ""
-#     else
-#         List.repeat " " diff
-#         |> Str.joinWith ""
-
-# leftPad = \string, size ->
-#     padFor string size
-#     |> Str.concat string
-
-# rightPad = \string, size ->
-#     Str.concat string (padFor string size)
-
-# ## Should left pad
-# expect
-#     actual = leftPad "123" 5
-#     expected = "  123"
-#     actual == expected
-# expect
-#     actual = rightPad "123" 5
-#     expected = "123  "
-#     actual == expected
-
-# expect
-#     actual = Health.new {
-#         type: Infantry,
-#         entity: 1,
-#         readiness: Defending,
-#         lastFired: 0,
-#         rate: 200,
-#         range: 1,
-#         damage: 25,
-#     }
-#     (Health.range actual) == 1
-
-# getHoverCell = \hoverCell, gamePad, lastGamepad, isObstacle ->
-#     go = \cell ->
-#         cell
-#         |> \{ row, column } ->
-#             if gamePad.up && Bool.not lastGamepad.up then
-#                 { row: row - 2, column }
-#             else
-#                 { row, column }
-#         |> \{ row, column } ->
-#             if gamePad.down && Bool.not lastGamepad.down then
-#                 { row: row + 2, column }
-#             else
-#                 { row, column }
-#         |> \{ row, column } ->
-#             if gamePad.left && Bool.not lastGamepad.left then
-#                 { row: row + 1, column: column - 1 }
-#             else
-#                 { row, column }
-#         |> \{ row, column } ->
-#             if gamePad.right && Bool.not lastGamepad.right then
-#                 { row: row + 1, column: column + 1 }
-#             else
-#                 { row, column }
-#     helper = \cell ->
-#         next = go cell
-#         if Hex.clamped next && isObstacle next then
-#             helper (next)
-#         else
-#             next
-#     helper hoverCell |> Hex.clamp
-
-# testInput = {
-#     up: Bool.false,
-#     down: Bool.false,
-#     left: Bool.false,
-#     right: Bool.false,
-# }
-
-# expect
-#     actual = getHoverCell (doubled 0 0) testInput testInput \_ -> Bool.false
-#     expected = doubled 0 0
-#     actual == expected
-# expect
-#     actual = getHoverCell (doubled 0 0) { testInput & down: Bool.true } testInput \_ -> Bool.false
-#     expected = doubled 0 2
-#     actual == expected
-# expect
-#     actual = getHoverCell (doubled 1 1) { testInput & left: Bool.true } testInput \_ -> Bool.false
-#     expected = doubled 0 2
-#     actual == expected
-# expect
-#     actual = getHoverCell (doubled 0 0) { testInput & right: Bool.true } testInput \_ -> Bool.false
-#     expected = doubled 1 1
-#     actual == expected
-
-# expect
-#     actual = getHoverCell (doubled 0 12) { testInput & right: Bool.true } testInput \_ -> Bool.false
-#     expected = doubled 1 13
-#     actual == expected
-
-# # gethoverCell clamps when next cell is out of bounds
-# expect
-#     actual = getHoverCell (doubled 12 0) { testInput & right: Bool.true } testInput \_ -> Bool.false
-#     expected = doubled 11 1
-#     actual == expected
-
-# expect
-#     actual = getHoverCell (doubled 0 0) { testInput & down: Bool.true } testInput \_ -> Bool.false
-#     expected = doubled 0 2
-#     actual == expected
-
-# # getHoverCell skips blocked cells below
-# expect
-#     actual = getHoverCell (doubled 0 0) { testInput & down: Bool.true } testInput \cell -> cell.row == 2 && cell.column == 0
-#     expected = doubled 0 4
-#     actual == expected
-
-# # getHoverCell skips multiple blocked cells below
-# expect
-#     isOccupied = \cell -> List.contains [doubled 0 2, doubled 0 4] cell
-#     actual = getHoverCell
-#         (doubled 0 0)
-#         { testInput & down: Bool.true }
-#         testInput
-#         isOccupied
-#     expected = doubled 0 6
-#     actual == expected
-
-# # getHoverCell up after down is no op
-# expect
-#     isOccupied = \cell -> List.contains [doubled 0 2, doubled 0 4] cell
-#     actual =
-#         getHoverCell (doubled 0 0) { testInput & down: Bool.true } testInput isOccupied
-#         |> getHoverCell { testInput & up: Bool.true } testInput isOccupied
-#     expected = doubled 0 0
-#     actual == expected
-
-# makeUnitIdLocator = \units -> \queryId -> List.find_first units \{ id } -> id == queryId
-# makeUnitIdIndexer = \units -> \queryId -> List.find_firstIndex units \{ id } -> id == queryId
-
-# maybeUpdateHoverCell = \isOccupied, oldIndex, newIndex, current ->
-#     if oldIndex != newIndex then
-#         Hex.neighborsOf current
-#         |> List.drop_if \c -> isOccupied c
-#         |> List.first
-#         |> Result.with_default current
-#     else
-#         current
-
-# renderInGame = \model, netplay, _frameCount ->
-#     thePlayer = getCurrentPlayer netplay
-#     theArmy = playerArmy thePlayer
-#     getUnitById = makeUnitIdLocator model.units
-#     totalMs =
-#         model.launchIn
-#         |> frameCountToSeconds
-#         |> Num.mul 1000
-#         |> Num.round
-#     msRemaining =
-#         model.launchTimer
-#         |> frameCountToSeconds
-#         |> Num.mul 1000
-#         |> Num.round
-
-#     (theMove, theHoverCell) =
-#         if theArmy == Union then
-#             (model.moves.0, model.hovering.union)
-#         else
-#             (model.moves.1, model.hovering.confederate)
-
-#     drawObs = List.walk model.map.obstacles (Task.ok {}) \task, obs ->
-#         task!
-#         { x, y } = Hex.hexToPixel obs
-#         W4.setShapeColors! { border: Color4, fill: None }
-#         Drawing.blitHexagon! obs boardRect Assets.filledHex
-#         W4.setTextColors { fg: Color1, bg: None }
-#         |> Task.await \_ -> W4.text "@" { x: x + boardRect.x + 4, y: boardRect.y + y + 2 }
-#     Drawing.drawBoardRect! boardRect
-#     drawObs!
-
-#     getOwner = \pad -> getPadOwner model.units pad
-#     Drawing.drawPads! model.map.launchPads getOwner
-#     Drawing.drawLaunchTimer! msRemaining totalMs {
-#         x: (boardRect.x + (Num.toI32 boardRect.width)) |> Num.toFrac |> Num.div 2 |> Num.round,
-#         y: (boardRect.y + (Num.toI32 boardRect.height)) |> Num.toFrac |> Num.div 2 |> Num.round,
-#     }
-#     # Drawing.drawPlayer! model.moves.0 getUnitById Color2 model.hovering.union
-#     # Drawing.drawPlayer! model.moves.1 getUnitById Color3 model.hovering.confederate
-#     np = W4.getNetplay!
-#     moves = when np is
-#         Disabled ->
-#             Drawing.drawPlayer model.moves.0 getUnitById Color2 model.hovering.union
-#             |> Task.await \_ -> Drawing.drawPlayer model.moves.1 getUnitById Color3 model.hovering.confederate
-#         Enabled _ ->
-#             if theArmy == Union then
-#                 Drawing.drawPlayer model.moves.0 getUnitById Color2 model.hovering.union
-#             else
-#                 Drawing.drawPlayer model.moves.1 getUnitById Color3 model.hovering.confederate
-
-#     moves!
-#     # isNetplay = when np is
-#     #     Disabled -> drawP1 |> Task.await \_ -> drawP2
-#     #     _ -> Task.ok {}
-#     # drawP1!
-#     # drawP2!
-
-# #     np = isNetplay
-# #         |> Task.await \isNet ->
-# #             if theArmy == Union then
-# #                 drawP1
-# #             else if isNet then
-# #                 drawP2
-# #             else
-# #                 drawP1 |> Task.await \_ -> drawP2
-
-# #     Drawing.drawHoverPositon! model.hovering.union (armyColor Union)
-# #     W4.setShapeColors! { border: armyColor Confederates, fill: None }
-# #     Drawing.drawHoverPositon! model.hovering.confederate (armyColor Confederates)
-
-#     selectedUnit =
-#         when theMove is
-#             Selected id _ | Destination id _ _ ->
-#                 getUnitById id
-#                 |> Result.map_ok \unit -> Chosen unit
-#                 |> Result.with_default None
-
-#             _ -> None
-
-#     _ <-
-#         List.keepIf model.units \u -> Unit.isAlive u
-#         |> \units -> Drawing.drawUnits units boardRect # isSelected theArmy
-#         |> Task.await
-
-#     task =
-#         when selectedUnit is
-#             Chosen u -> Drawing.drawSelectionIndicator (u.position) (armyColor u.army)
-#             None -> Task.ok {}
-#     task!
-
-#     unitSummary =
-#         when theMove is
-#             Selected id path | Destination id _ path ->
-#                 getUnitById id
-#                 |> Result.map_ok \unit -> Unit.summary unit path
-#                 |> Result.with_default "He dead ..."
-
-#             Finished -> "Press \u(81)\nto choose\nnew unit"
-
-#     shapeColors = { fill: Color1, border: Color4 }
-#     W4.setShapeColors! shapeColors
-#     infoY = boardRect.y + (Num.toI32 boardRect.height)
-#     W4.rect! {
-#         x: 0,
-#         y: infoY,
-#         height: Num.toU32 (160 - (boardRect.y + (Num.toI32 boardRect.height))),
-#         width: 160,
-#     }
-#     W4.setTextColors! { fg: Color4, bg: None }
-#     W4.text! unitSummary {
-#         x: boardRect.x,
-#         y: infoY + 2,
-#     }
-#     W4.setTextColors! { bg: Color4, fg: None }
-#     currCellText = " $(Num.toStr theHoverCell.column),$(Num.toStr theHoverCell.row) "
-#     width = Str.countUtf8Bytes currCellText
-#     W4.text! currCellText {
-#         x: boardRect.x + (Num.toI32 boardRect.width) - (Num.toI32 (width * 7)),
-#         y: (boardRect.y + (Num.toI32 boardRect.height) + 2) |> Num.abs,
-#     }
-#     Drawing.drawToolbar {
-#         x: 0,
-#         y: 160 - 50,
-#         # (Num.toI32 boardRect.height) |> Num.sub 25
-#     }
-
-# updateMoveChoice : Unit.MoveChoice, _ -> (Unit.MoveChoice, U64)
-# updateMoveChoice = \currentChoice, { hovering, theArmy, getUnitById, zPressed, wasPressed, nextIndex, isOccupied, units } ->
-#     selected = getUnitFromClickedCell units hovering theArmy
-#     total = List.len units
-#     idx = if total > 0 then nextIndex % total else 0
-#     (resultChoice, newIndex) =
-#         when currentChoice is
-#             Destination _ _ _ | _ if zPressed ->
-#                 List.get units idx
-#                 |> Result.map_ok \u -> (Selected u.id u.lastPath, idx + 1)
-#                 |> Result.with_default (currentChoice, nextIndex)
-
-#             Destination _ _ _ ->
-#                 List.get units idx
-#                 |> Result.map_ok \u -> (Selected u.id u.lastPath, idx + 1)
-#                 |> Result.with_default (currentChoice, nextIndex)
-
-#             Finished if wasPressed ->
-#                 units
-#                 |> List.find_first \{ cell, army } -> cell == hovering && army == theArmy
-#                 |> Result.map_ok \u -> (Selected u.id [], nextIndex)
-#                 |> Result.with_default (Finished, nextIndex)
-
-#             Selected id path if wasPressed ->
-#                 getUnitById id
-#                 |> Result.map_ok \u ->
-#                     if u.cell == hovering then
-#                         (Finished, nextIndex)
-#                     else if isOccupied hovering then
-#                         selected
-#                         |> Result.map_ok \newUnit -> (Selected newUnit.id newUnit.lastPath, nextIndex)
-#                         |> Result.with_default (Finished, nextIndex)
-#                     else
-#                         (Destination u.id hovering path, nextIndex)
-#                 |> Result.with_default (currentChoice, nextIndex)
-
-#             Selected id prevPath ->
-#                 destUpdated =
-#                     List.last prevPath
-#                     |> Result.map_ok \prevDest -> prevDest != hovering
-#                     |> Result.with_default Bool.true
-#                 unitMoved =
-#                     List.first prevPath
-#                     |> Result.try \last ->
-#                         getUnitById id
-#                         |> Result.map_ok \u -> u.cell != last
-#                     |> Result.with_default Bool.true
-#                 if unitMoved || destUpdated then
-#                     (
-#                         updatePlayerPlannedPath id hovering prevPath getUnitById isOccupied,
-#                         nextIndex,
-#                     )
-#                 else
-#                     (Selected id prevPath, nextIndex)
-
-#             otherwise -> (otherwise, nextIndex)
-
-#     (resultChoice, newIndex)
-
-# updatePlayerPlannedPath = \id, hovering, prevPath, getUnitById, isOccupied ->
-#     getUnitById id
-#     |> Result.map_ok \u ->
-#         withoutMe = \cell ->
-#             if u.cell == cell then
-#                 Bool.false
-#             else
-#                 isOccupied cell
-#         if withoutMe hovering then
-#             prevPath
-#         else
-#             Hex.findGraph u.cell hovering withoutMe
-#             |> Result.map_ok \p ->
-#                 when u.readiness is
-#                     Moving ->
-#                         Unit.reroutePath p u.lastPath u.cell
-
-#                     _ -> p
-#             |> Result.with_default prevPath
-#     |> Result.map_ok \newPath -> Selected id newPath
-#     |> Result.with_default Finished
-
-# getCombatOrders = \unitsAndModifiers ->
-#     justUnits = List.map unitsAndModifiers .0
-#     List.keepOks unitsAndModifiers \(u, modifier) ->
-#         Unit.combatOrder u modifier justUnits
-
-# randList = \{ length } ->
-#     List.range { start: At 0, end: At length }
-#     |> List.walk (Task.ok []) \last, _ ->
-#         last
-#         |> Task.await \accum ->
-#             W4.randBetween { start: 1, before: 100 }
-#             |> Task.map \mod -> List.append accum mod
-
-# runCombat = \units, modifiers ->
-#     indexer = makeUnitIdIndexer units
-#     # First get all of the eligible attackers
-#     # and their single target
-#     combatOrders =
-#         List.map2 units modifiers \u, m -> (u, m)
-#         |> getCombatOrders
-#     # Now walk over the list of (attacker, defender, damage) triples
-#     # and accumulate an updated list of units
-#     List.walk combatOrders units \accum, (source, target, damage) ->
-#         # Update `readinesss` of attacking unit
-#         updatedAccum =
-#             List.find_firstIndex accum \u -> u.id == source.id
-#             |> Result.map_ok \attackerIdx ->
-#                 List.update accum attackerIdx \u ->
-#                     { u & readiness: Cooldown (Num.round u.cooldownRate) }
-#             |> Result.with_default accum
-#         ## Update `health` of defender
-#         indexer target.id
-#         |> Result.map_ok \victimIndex ->
-#             List.update updatedAccum victimIndex \u ->
-#                 #           ^^--- update the new version
-#                 { u & health: Unit.takeHit u damage }
-#         |> Result.with_default updatedAccum
-
-# ## runCombat should get targets, update health
-# expect
-#     testUnits = [
-#         {
-#             id: 0,
-#             cooldownRate: 100.0,
-#             readiness: Ready,
-#             army: Union,
-#             cell: doubled 2 4,
-#             health: Living (Health.make 200),
-#             attackDamage: 5u32,
-#         },
-#         {
-#             id: 1,
-#             cooldownRate: 50.0,
-#             readiness: Ready,
-#             army: Confederates,
-#             cell: doubled 3 3,
-#             health: Living (Health.make 100),
-#             attackDamage: 10u32,
-#         },
-#     ]
-
-#     actual =
-#         runCombat testUnits [100, 100]
-#         |> List.map \{ health } ->
-#             when health is
-#                 Living h -> Health.health h
-#                 _ -> 0
-
-#     expectedLessThan = List.map testUnits \u ->
-#         when u.health is
-#             Living h -> Health.health h
-#             _ -> 0
-
-#     List.all
-#         (List.map2 actual expectedLessThan (\a, e -> a <= e))
-#         \r -> r == Bool.true
-
-# ## runCombat should not over/underflow
-# expect
-#     testUnits = [
-#         {
-#             id: 0,
-#             cooldownRate: 100.0,
-#             readiness: Ready,
-#             army: Union,
-#             cell: doubled 2 4,
-#             health: Living (Health.make 9),
-#             attackDamage: 10u32,
-#         },
-#         {
-#             id: 1,
-#             cooldownRate: 100.0,
-#             readiness: Ready,
-#             army: Confederates,
-#             cell: doubled 3 3,
-#             health: Living (Health.make 100),
-#             attackDamage: 10u32,
-#         },
-#     ]
-#     actual = runCombat testUnits [100, 100] |> List.map Unit.isAlive
-#     expected = [Bool.false, Bool.true]
-#     actual == expected
-# # updateBackground : Model -> Model
-# # updateBackground = \gameState ->
-# #     {
-# #         gameState &
-# #         background:
-# #             when gameState.screenState is
-# #                 TitleScreen _ -> getArt gameState
-# #                 InGame _ -> getArt gameState
-# #                 GameOver { winner } ->
-# #                     when winner is
-# #                         Union -> Assets.dawn
-# #                         Confederates -> Assets.flame
-# #     }
-
-# # getArt : Model -> Sprite
-# # getArt = \model ->
-# #     if model.frameCount % 301 != 0 then
-# #         model.background
-# #     else
-# #         totalBackgrounds = List.len model.backgrounds
-# #         (Num.toU32 model.frameCount) % (Num.toU32 totalBackgrounds)
-# #         |> \index -> List.get model.backgrounds (Num.toU64 index)
-#
-
-getFirstMove = |forArmy, units|
-    List.find_first units |{ army }| army == forArmy
-    |> Result.map_ok |{ id }| Selected id []
-    |> Result.with_default Finished
-
-newGame : U64, Army, Army -> GameState
-newGame = |startFrame, player1Army, player2Army|
-    launchIn = 60 * 11
-
-    units = Unit.initial (|_| Bool.true) # List.dropLast initialUnits 0 # [] #initialUnits
-    unionMove = getFirstMove Union units
-    confederateMove = getFirstMove Confederates units
-
-    {
-        startFrame,
-        units,
-        launchIn,
-        unitIndex: {
-            union: 1u64,
-            confederate: 1u64,
-        },
-        moves: (unionMove, confederateMove),
-        armies: (player1Army, player2Army),
-        map: {
-            obstacles: [
-                doubled 2 4,
-                doubled 4 6,
-                doubled 8 6,
-                doubled 6 4,
-                doubled 5 5,
-                doubled 7 5,
-                doubled 6 6,
-                doubled 6 8,
-                doubled 5 7,
-                doubled 7 7,
-                doubled 10 4,
-                doubled 2 10,
-                doubled 3 11,
-            ],
-            launchPads: [
-                # [
-                #     doubled 3 9,
-                #     doubled 2 10,
-                #     doubled 3 11,
-                # ],
-                [
-                    doubled 5 3,
-                    doubled 7 3,
-                ],
-                [
-                    doubled 5 9,
-                    doubled 6 10,
-                    doubled 7 9,
-                ],
-            ],
-        },
-        launchTimer: launchIn,
-        hovering: {
-            union: doubled 4 0,
-            confederate: doubled 8 4,
-        },
-    }
-
-
-# armyColor = |army|
-#     when army is
-#         Union -> Color2
-#         Confederates -> Color3
-
-# armyName = |army|
-#     when army is
-#         Union -> "Union"
-#         Confederates -> "Confederacy"
-
-# armyPalette = |army|
-#     when army is
-#         Union -> unionPalette
-#         Confederates -> confederatePalette
-
-# playerArmy = |player|
-#     when player is
-#         Player1 | Player3 -> Union
-#         Player2 | Player4 -> Confederates
-
-
-# init : Task Model []
-# init =
-#     W4.setPalette! palette
-#     Task.ok baseState
-# # getPadOwner : List Unit, LaunchPad -> [Owned [Union, Confederates], Unowned]
-# getPadOwner = \units, pad ->
-#     byArmy = List.walk pad [] \accum, cell ->
-#         List.find_first units \u -> u.cell == cell
-#         |> Result.map_ok \u -> List.append accum u.army
-#         |> Result.with_default accum
-
-#     (union, confederates) = List.walk byArmy (0, 0) \accum, army ->
-#         when army is
-#             Union -> (accum.0 + 1, accum.1)
-#             Confederates -> (accum.0, accum.1 + 1)
-
-#     if union == confederates then
-#         Unowned
-#     else if union > 0 && confederates == 0 then
-#         Owned Union
-#     else if confederates > 0 && union == 0 then
-#         Owned Confederates
-#     else
-#         Unowned
-
-
-
-# cellObstacle : List Doubled -> (Doubled -> Bool)
-# cellObstacle = \occupied -> \cell -> List.contains occupied cell
-
-# isCellOccupied : List Unit, List Doubled -> (Doubled -> Bool)
-# isCellOccupied = \units, obstacles ->
-#     List.map units (\u -> u.cell)
-#     |> List.concat obstacles
-#     |> cellObstacle
-
- #             |> Result.with_default model.background
-
-
-# drawUnit!: Unit.Unit, Hex.Point -> {}
+drawUnit! : Unit -> _
 drawUnit! = \unit ->
     point = Hex.addPoint unit.position { x: 4, y: 2 }
     drawTo = {
@@ -1486,7 +749,7 @@ drawUnit! = \unit ->
             Ready -> ({ fill: Blue, border: Black }, Hex.horizontalSpace |> Num.round)
             Moving _ -> ({ fill: RGBA 0 0 0 0, border: Black }, Hex.horizontalSpace |> Num.round)
     Draw.rectangle! {
-        color: White,
+        color: if unit.army == Confederates then Black else Navy,
         rect: {
             width: 82,
             height: 82,
@@ -1494,16 +757,16 @@ drawUnit! = \unit ->
             y: drawTo.y - (82 / 2),
         }
     }
-    Draw.rectangle! {
-                    # color: if unit.army == Confederates then Silver else RGBA(11, 137, 252, 255),
-        color: Black,
-        rect: {
-            width: 78,
-            height: 78,
-            x: drawTo.x - (78 / 2),
-            y: drawTo.y - (78 / 2),
-        }
-    }
+    # Draw.rectangle! {
+    #                 # color: if unit.army == Confederates then Silver else RGBA(11, 137, 252, 255),
+    #     color: Black,
+    #     rect: {
+    #         width: 78,
+    #         height: 78,
+    #         x: drawTo.x - (78 / 2),
+    #         y: drawTo.y - (78 / 2),
+    #     }
+    # }
     Draw.rectangle! {
         color: if unit.army == Confederates then Silver else RGBA(11, 137, 252, 255),
         rect: {
@@ -1534,21 +797,14 @@ drawUnit! = \unit ->
             center: { x: drawTo.x, y: drawTo.y - 12 },
             radius: 16,
         }
-    # Draw.rectangle! {
-    #     color: readyColors.border,
-    #     rect: {
-    #         x: outlinePoint.x + 1 |> Num.to_f32,
-    #         y: outlinePoint.y + 1 |> Num.to_f32,
-    #         width: width - 2 |> Num.to_f32,
-    #         height: 1,
-    #     }
-    # }
     Draw.rectangle_gradient_h! {
         left: readyColors.fill,
         right: Red,
-        rect: {x: outlinePoint.x,
-        y: outlinePoint.y,
-        width: Hex.horizontalSpace / 2,
-        height: 8 }
+        rect: {
+            x: outlinePoint.x + 4,
+            y: outlinePoint.y,
+            width: Hex.horizontalSpace / 2,
+            height: 8
+        }
     }
     renderHexOutline! unit.cell Hex.hexSize (RGBA 0 0 0 0)

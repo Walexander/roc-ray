@@ -10,6 +10,7 @@ module [
     rectangle_gradient_h!,
     circle!,
     circle_gradient!,
+    circle_lines!,
     texture_rec!,
     render_texture_rec!,
 ]
@@ -137,6 +138,17 @@ circle_gradient! = |{ center, radius, inner, outer }|
     oc = rgba(outer)
 
     Effect.draw_circle_gradient!(InternalVector.from_vector2(center), radius, ic, oc)
+
+## Draw a circle outline
+## ```
+## Draw.cirlce_line! { center: { x: 600, y: 400 }, radius: 75, inner: Yellow, outer: Maroon }
+## ```
+circle_lines! : { center : Vector2, radius : F32, color : Color } => {}
+circle_lines! = |{ center, radius, color}|
+
+    oc = rgba(color)
+
+    Effect.draw_circle_lines!(InternalVector.from_vector2(center), radius, oc)
 
 ## Draw part of a texture.
 ## ```

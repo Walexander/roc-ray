@@ -32,11 +32,12 @@ HexMap : {
   # clamped: Doubled -> Bool,
   # neighbors: Doubled -> List Doubled,
   border: List Doubled,
+  center: List Doubled,
   launch_pads: List (List Doubled),
 }
 
-init: Doubled, Doubled -> HexMap
-init = |min_cell, max_cell|
+init: Doubled, Doubled, _ -> HexMap
+init = |min_cell, max_cell, noise_fn|
   border =
     top_left = doubled(min_cell.column - 1, min_cell.row - 1)
     top_right = doubled(max_cell.column + 1, top_left.row)
@@ -50,7 +51,7 @@ init = |min_cell, max_cell|
     ])
   # column_count = max_cell.column - min_cell.column |> Num.to_f32
   # row_count = max_cell.row - min_cell.row |> Num.to_f32
-  tile_maker = terrain_from_tile { min_cell, max_cell }
+  tile_maker = terrain_from_tile { min_cell, max_cell, noise_fn }
   tiles =
     ## for each column from min to max
     List.range {
@@ -85,26 +86,27 @@ init = |min_cell, max_cell|
     max_cell,
     border,
     tiles,
+    center: List.concat([doubled(0, 0), doubled(-2, 0), doubled(2, 0)], Hex.doubleNeighbors),
     launch_pads: [
-      [ doubled(0, -2), doubled(1, -1) ],
-      [ doubled(-2, 2), doubled(-1, 3) ],
+      [ doubled(-1, -3), doubled(0, -4), doubled(1, -3) ],
+      [ doubled(-1, 3), doubled(0, 4), doubled(1, 3) ],
     ]
   }
 
 is_in_bounds = |map, cell|
   clamped = Hex.clampCube map.min_cell map.max_cell
-  clamped cell
+  clamped cell && Bool.not( List.contains map.center cell )
 
-terrain_from_tile = |{ min_cell, max_cell }|
+terrain_from_tile = |{ min_cell, max_cell, noise_fn }|
   col_scale = 1/Num.to_f32(max_cell.column - min_cell.column)
   row_scale = 1/Num.to_f32(max_cell.row - min_cell.row)
 
   |cell|
     col_n = Num.to_f32(cell.column) * col_scale
     row_n = Num.to_f32(cell.row) * row_scale
-    noise = 2 * Noise.perlin2d(1.05 * col_n, 1.125 * row_n)
+    noise = 2 * noise_fn(1.05 * col_n, 1.125 * row_n)
 
-    dbg "Got noise from ${col_n |> Num.to_str}, ${row_n|> Num.to_str} = ${Inspect.to_str noise}"
+    # dbg "Got noise from ${col_n |> Num.to_str}, ${row_n|> Num.to_str} = ${Inspect.to_str noise}"
     { cell, terrain: terrain_from_height noise }
 
 make_tile : Doubled, Terrain -> HexTile
@@ -112,30 +114,37 @@ make_tile = |cell, terrain_|
   { cell, terrain: terrain_ }
 
 toggle_terrain = |map, cell, terrain|
-  tiles =  Dict.update(map.tiles, cell, |result|
-    Result.map_ok result |_| make_tile cell terrain
+  { map &
+    tiles: Dict.update(map.tiles, cell, |result|
+      Result.map_ok result |_| make_tile cell terrain
   )
-  { map & tiles }
+}
 
 neighbors = |map|
+  center = map.center
   clamped = Hex.clampCube map.min_cell map.max_cell
   |cell|
-    List.map Hex.doubleNeighbors |n| Hex.add n cell
-    |> List.keep_if clamped
+    (
+        List.map Hex.doubleNeighbors |n| Hex.add n cell
+        |> List.keep_if clamped
+        |> List.keep_if |c| List.contains center c |> Bool.not
+    )
+
 
 terrain_from_height = |height|
-  if height < -0.8 then Water
-  else if height < -0.7 then Sand
-  else if height < -0.4 then Gravel
-  else if height < 0.2 then Stone
-  else if height < 0.3 then Forest
-  else if height < 0.4 then Pasture
+  if height < -0.9 then Water
+  else if height < -0.5 then Sand
+  else if height < -0.20 then Gravel
+  else if height < 0.25 then Pasture
+  else if height < 0.7 then Forest
+  else if height < 0.9 then Stone
   else Mountain
 
-get_terrain = |map|
-  |cell|
-    Dict.get map.tiles cell
-      |> Result.with_default Sand
+get_terrain : HexMap, Doubled -> Terrain
+get_terrain = |map, cell|
+  Dict.get map.tiles cell
+    |> Result.map_ok .terrain
+    |> Result.with_default Sand
 
 terrains = [Sand,
   Gravel,
@@ -164,9 +173,9 @@ terrain_cost = |terrain|
     Lava -> 5
     Basalt -> 5
 
-next_terrain : HexTile -> Terrain
-next_terrain = |tile|
-  when tile.terrain is
+next_terrain : Terrain -> Terrain
+next_terrain = |terrain|
+  when terrain is
     Sand -> Gravel
     Gravel -> Rocky
     Rocky -> Stone
@@ -174,9 +183,9 @@ next_terrain = |tile|
     Pasture -> Mountain
     Mountain -> Granite
     Granite -> Forest
-    Forest -> Basalt
-    Field -> Rocky
-    Basalt -> Lava
+    Forest -> Field
+    Field -> Lava
+    Basalt -> Basalt
     Lava -> Water
     Water -> Sand
 
