@@ -1,6 +1,7 @@
 module [Unit, MoveChoice, Id, combatOrder, isAlive, takeHit, summary, reroute, make, moveTo, initial, updateReadiness]
 import Hex exposing [Doubled, Point, doubled]
 import Utils exposing [frameCountToSeconds]
+import PointyHex
 import Health
 # import Assets
 # import w4.Sprite exposing [Sprite]
@@ -29,7 +30,7 @@ MoveChoice : [
 ]
 make : _ -> Unit
 make = \{ type, id: inId, army, cell } ->
-    position = Hex.hexToPixel cell
+    position = PointyHex.hex_to_pixel cell
     lastPath = []
     id = Num.to_i8 inId
     when type is
@@ -102,13 +103,13 @@ moveTo = |unit, dest, path_finder|
     next_cell = List.get(path, 1) |> Result.with_default(unit.cell)
 
     (readiness, lastPath) = when unit.readiness is
-        Cooldown _ | Ready -> (Moving { start: Hex.hexToPixel unit.cell, end: Hex.hexToPixel(next_cell), t: 0  }, path)
+        Cooldown _ | Ready -> (Moving { start: PointyHex.hex_to_pixel unit.cell, end: PointyHex.hex_to_pixel(next_cell), t: 0  }, path)
         Moving { start, end, t } ->
-            start_cell = Hex.pixelToHex(start)
-            end_cell = Hex.pixelToHex(end)
+            start_cell = PointyHex.pixel_to_hex start
+            end_cell = PointyHex.pixel_to_hex end
             if start_cell == from_cell && next_cell != end_cell then
                 (Moving { start: end, end: start, t: 1 - t }, List.prepend(path, end_cell))
-            else if next_cell == Hex.pixelToHex(end) then
+            else if next_cell == PointyHex.pixel_to_hex end  then
                 (Moving {start, end, t}, path)
             else
                 (Moving {start, end, t}, List.prepend(path, prev_cell))
@@ -144,7 +145,7 @@ combatOrder = \unit, modifier, units ->
             (unit, target, damage)
 
 getTargeting = \units, unit ->
-    Hex.neighborsOf unit.cell
+    PointyHex.neighbors unit.cell
     |> List.join_map \cell ->
         List.find_first units \u ->
             when u.health is
@@ -179,12 +180,12 @@ expect
 
 # initial : ( \Hex.Doubled -> Bool ) -> List Unit
 initial = [
-    make { id: 5, type: Cavalry, army: Union, cell: doubled -1 -5 },
-    make { id: 4, type: Infantry, army: Union, cell: doubled 0 -6 },
-    make { id: 3, type: Infantry, army: Union, cell: doubled 1 -5 },
-    make { id: 6, type: Artillery, army: Confederates, cell: doubled -1 5 },
-    make { id: 7, type: Cavalry, army: Confederates, cell: doubled 0 6 },
-    make { id: 8, type: Infantry, army: Confederates, cell: doubled 1 5 },
+    make { id: 5, type: Cavalry, army: Union, cell: doubled -9 -3 },
+    make { id: 4, type: Infantry, army: Union, cell: doubled -8 -2 },
+    make { id: 3, type: Infantry, army: Union, cell: doubled 6 -2 },
+    make { id: 6, type: Artillery, army: Confederates, cell: doubled 7 3 },
+    make { id: 7, type: Cavalry, army: Confederates, cell: doubled 8 2 },
+    make { id: 8, type: Infantry, army: Confederates, cell: doubled 6 2 },
 ]
 
 updateReadiness: Unit -> Unit
@@ -199,7 +200,7 @@ update : Unit, U64, MoveChoice, (Doubled -> Bool) -> Unit
 update = \original, frameCount, move, cannotMoveTo ->
     { cell, dest, moveRate } = original
     (newDest, newPath) = unitPathFromMove original move cannotMoveTo
-    currentCellPosition = Hex.pixelToHex original.position
+    currentCellPosition = PointyHex.pixel_to_hex original.position
     moveCountDown = frameCount % (Num.round moveRate)
 
     marchingOrder =
@@ -214,10 +215,10 @@ update = \original, frameCount, move, cannotMoveTo ->
 
     (velocity, position) = when marchingOrder is
             Stopped -> ({ x: 0, y: 0 }, original.position)
-            DoneMoving finalDest -> ({x: 0, y: 0}, Hex.hexToPixel(finalDest))
+            DoneMoving finalDest -> ({x: 0, y: 0}, PointyHex.hex_to_pixel(finalDest))
             ProceedTo from to _ _ ->
-                from_pos = Hex.hexToPixel from
-                to_pos = Hex.hexToPixel to
+                from_pos = PointyHex.hex_to_pixel from
+                to_pos = PointyHex.hex_to_pixel to
                 v_ = Hex.subPoint to_pos from_pos |> |v| { x: v.x / moveRate |> Num.to_f32, y: v.y / moveRate  |> Num.to_f32}
                 (v_, Hex.addPoint(original.position, v_))
             UpdatePathTo _ _ -> ({ x: 0, y: 0}, original.position)
@@ -236,28 +237,14 @@ update = \original, frameCount, move, cannotMoveTo ->
             { original & position, velocity, lastPath: [] }
 
         ProceedTo _ nextCell destination path if moveCountDown == 0 ->
-            dest_coords = Hex.hexToPixel nextCell
-            f = Hex.subPoint original.position dest_coords
-
             { original &
                 cell: nextCell,
-                position: Hex.hexToPixel nextCell,
-                # position: Hex.pointLerp original.position (Hex.hexToPixel nextCell) (1 / moveRate),
-                # position,
+                position: PointyHex.hex_to_pixel nextCell,
                 lastPath: path |> List.drop_first 1,
                 dest: destination,
             }
 
         ProceedTo _ _ destination path ->
-            # from_pos = Hex.hexToPixel fromCell
-            # to_pos = Hex.hexToPixel nextCell
-            # _position =
-            #     Hex.pointLerp from_pos to_pos
-            #         (
-            #             moveCountDown
-            #             |> Num.to_frac
-            #             |> Num.div moveRate
-            #         )
             { original &
                 dest: destination,
                 lastPath: path,
@@ -342,7 +329,7 @@ summary = \unit, planned ->
 reroute = |unit, isOccupied, path_finder|
     when unit.readiness is
         Moving { end } ->
-            if isOccupied(Hex.pixelToHex(end)) then
+            if isOccupied(PointyHex.pixel_to_hex(end)) then
                 dbg "Re-routing unit ${Inspect.to_str unit.id} to ${Inspect.to_str unit.dest}"
                 moveTo(unit, unit.dest, path_finder)
             else

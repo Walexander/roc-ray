@@ -4,6 +4,7 @@ import rr.Keys
 import Hex
 import Unit
 import HexTile
+import PointyHex
 import Model exposing [ YearOfDecision ]
 
 PlayerMove : [ IncreaseTimer,
@@ -24,7 +25,7 @@ MoveUnitData : {
 inputs_to_move : YearOfDecision, _, _, _, _, _ -> PlayerMove
 inputs_to_move = |model, is_occupied, unit_from_cell, hover_coords, keys, buttons|
   if Mouse.pressed buttons.left then
-    hover_cell = Hex.pixelToHex(hover_coords)
+    hover_cell = PointyHex.pixel_to_hex(hover_coords)
     if Keys.down keys KeyLeftShift then
       terrain = HexTile.get_terrain model.map hover_cell
       ToggleTerrain hover_cell (HexTile.next_terrain terrain)
@@ -68,6 +69,8 @@ update! = |model, move, path_finder|
     IncreaseTimer ->
       { model & countdown: Num.max(0, model.countdown + 1_000) }
     DecreaseTimer ->
-      { model & countdown: Num.max(0, model.countdown - 1_000) }
+      { model & countdown: if model.countdown >= 1000 then
+          Num.max(0, model.countdown |> Num.sub_wrap 1_000)
+      else 0 }
     ResetGame ->
       Model.initialize!(model.camera, model.hexTexture, model.sounds, model.base_camera)

@@ -33,6 +33,9 @@ module [
     hexPoints,
     pointLerp,
     magnitude,
+    axialToCube,
+    cubeRound,
+    cubeToDouble,
 ]
 import Graph
 

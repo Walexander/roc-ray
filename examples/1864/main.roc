@@ -3,7 +3,8 @@ app [Model, init!, render!] { rr: platform "../../platform/main.roc" }
 import Unit exposing [Unit]
 import GameActions
 # import Assets
-import Hex exposing [Doubled, doubled, hexToPixel, pixelToHex]
+import Hex exposing [Doubled, doubled, pixelToHex]
+import PointyHex
 import HexTile
 
 import Noise
@@ -61,14 +62,14 @@ screen = {
 camera_settings = {
     target: { x: 0.0, y: 0 },
     offset: {x: screen.width / 2, y: screen.height / 2 - 80},
-    zoom: 0.55,
+    zoom: 1.2,
     rotation: 0
 }
 init! : {} => Result YearOfDecision _
 init! = |{}|
     RocRay.init_window! { width: screen.width, height: screen.height, title: "Stupid STuff" }
     RocRay.set_target_fps! 60
-    hexTexture = Texture.load!("examples/1864/assets/Flat/hex-tiles-no-outline.png")?
+    hexTexture = Texture.load!("examples/1864/assets/kenney-tiles.png")?
     camera = Camera.create!(camera_settings)?
     zap = Sound.load!("examples/assets/sound/sound.wav")?
     ok =  Sound.load!("examples/1864/assets/yessir.mp3")?
@@ -85,10 +86,12 @@ render! = |model, pf|
 
 
     isOccupied = |cube| List.contains (model.units |> List.map .cell) cube
+
     path_finder = HexTile.make_path_finder model.map isOccupied
+
     unit_from_cell = |cell| List.find_first model.units |u| u.cell == cell
     mouse_world = RocRay.get_screen_to_world_2d! pf.mouse.position model.camera
-    hover_cell = pixelToHex mouse_world
+    hover_cell = PointyHex.pixel_to_hex mouse_world
 
     mouseCell2 = if HexTile.is_in_bounds model.map (hover_cell) then
         hover_cell
@@ -105,6 +108,7 @@ render! = |model, pf|
     debugText =
         """
             Mouse to World: ( $(Num.round mouse_world.x|>Num.to_str), ${ Num.round mouse_world.y |> Num.to_str } )
+            Hover Cell: ${ Inspect.to_str hover_cell }
             Countdown = ${model.countdown |> Num.to_str}
             Pct=${countdown_pct |> Num.mul 100 |> to_fixed 0}%, Seed = ${model.seed |> Num.to_str}; A=${intensity|>to_fixed 3}
             Trauma=${model.trauma |> to_fixed 3}
@@ -186,7 +190,7 @@ render_debug! = |model, mouse_pos, keys, debug_text|
         {}
 
 renderHexOutline! = \cell, size, color ->
-    points = Hex.hexPoints (Hex.hexToPixel cell) size
+    points = PointyHex.points (PointyHex.hex_to_pixel cell)
     drawPath! points color 3 Bool.true
 
 
@@ -203,11 +207,11 @@ render_game! = |model, pf, path_finder|
             when result is
                 Ok u -> u
                 Err _ -> crash "must have non empty unit list"
-    straightLine = cubePath |> List.map |point| Hex.hexToPixel point
-    cubePath = path_finder(Hex.pixelToHex(summary_unit.position), model.hoverCell)
+    straightLine = cubePath |> List.map |point| PointyHex.hex_to_pixel point
+    cubePath = path_finder(PointyHex.pixel_to_hex(summary_unit.position), model.hoverCell)
     unitPath_ =
         summary_unit.lastPath
-        |> List.map Hex.hexToPixel
+        |> List.map PointyHex.hex_to_pixel
         |> List.drop_first 1
         |> List.prepend (summary_unit.position)
     Draw.with_mode_2d!
@@ -216,48 +220,48 @@ render_game! = |model, pf, path_finder|
             render_map! model.map model.hexTexture
 
 
-            if Keys.down pf.keys KeyLeftControl then
-                drawPath! straightLine Navy 5 Bool.false
-            else {}
+           if Keys.down pf.keys KeyLeftControl then
+               drawPath! straightLine Navy 5 Bool.false
+           else {}
 
-            max_radius = 64
-            drawPath! unitPath_ White 5 Bool.false
-            #renderHexOutline! model.hoverCell  (Hex.hexSize + 4) Navy
-            List.range { start: At 0, end: Before 8 }
-                |> List.for_each! |i|
-                    Draw.circle_lines! {
-                        center: Hex.hexToPixel model.hoverCell ,
-                        color: Navy,
-                        radius: Num.to_f32 (max_radius + i)
-                    }
+           max_radius = 32
+           drawPath! unitPath_ White 5 Bool.false
+           renderHexOutline! model.hoverCell  (PointyHex.vertical_spacing + 4) Navy
+           List.range { start: At 0, end: Before 8 }
+               |> List.for_each! |i|
+                   Draw.circle_lines! {
+                       center: PointyHex.hex_to_pixel model.hoverCell ,
+                       color: Navy,
+                       radius: Num.to_f32 (max_radius - i)
+                   }
 
-            (center, radius) = when model.glowing is
-                None ->
-                    c = Hex.hexToPixel summary_unit.dest
-                    (c, max_radius)
-                Running (cell, anim) ->
-                    c = Hex.hexToPixel cell
-                    (c, max_radius |> Num.to_f32 |> Num.div 8 |> Num.mul (Num.to_f32 anim.frame_index) |> Num.round)
+           (center, radius) = when model.glowing is
+               None ->
+                   c = PointyHex.hex_to_pixel summary_unit.dest
+                   (c, max_radius)
+               Running (cell, anim) ->
+                   c = PointyHex.hex_to_pixel cell
+                   (c, max_radius |> Num.to_f32 |> Num.div 8 |> Num.mul (Num.to_f32 anim.frame_index) |> Num.round)
 
-            List.range { start: At 0, end: Before 8 }
-                |> List.for_each! |i|
-                    Draw.circle_lines! {
-                        center,
-                        color: RGBA(250, 250, 250, 255),
-                        radius: Num.to_f32 (max_radius + i)
-                    }
-                    Draw.circle_lines! {
-                        center,
-                        color: RGBA(255, 250, 250, 255),
-                        radius: Num.to_f32 (radius - 8 - i)
-                    }
-                    Draw.circle_lines! {
-                        center,
-                        color: RGBA(255, 250, 250, 255),
-                        radius: Num.to_f32 (radius - i)
-                    }
-            List.for_each!(model.units, |unit| drawUnit! unit)
-            render_countdown! model.countdown
+           List.range { start: At 0, end: Before 4 }
+               |> List.for_each! |i|
+                   Draw.circle_lines! {
+                       center,
+                       color: RGBA(250, 250, 250, 255),
+                       radius: Num.to_f32 (max_radius - i)
+                   }
+                   Draw.circle_lines! {
+                       center,
+                       color: RGBA(255, 250, 250, 255),
+                       radius: Num.to_f32 (radius - 4 - i)
+                   }
+                   Draw.circle_lines! {
+                       center,
+                       color: RGBA(255, 250, 250, 255),
+                       radius: Num.to_f32 (radius - i)
+                   }
+           List.for_each!(model.units, |unit| drawUnit! unit)
+           render_countdown! model.countdown
     {}
 
 render_sound! = |model, player_move|
@@ -276,7 +280,7 @@ render_sound! = |model, player_move|
 update_camera! = |model, pf|
     old_settings = model.base_camera
     intensity = model.trauma * model.trauma * model.trauma
-    amplitude = 20.0 * intensity
+    amplitude = 5.0 * intensity
     frequency = pf.frame_count |> Num.to_f32 |> Num.mul 15.5
     _ = if pf.frame_count % 60 == 0 then
         dbg "pf.last_render_end = ${Inspect.to_str pf.timestamp.last_render_end}, frame_count = ${Inspect.to_str pf.frame_count}"
@@ -347,8 +351,8 @@ render_trauma_bar! = |trauma, intensity|
     }
 
 render_countdown! = |countdown|
-    diameter = 128
-    text_size = 128
+    diameter = 64
+    text_size = 64
     center = { x: 0 , y: 0 }
     text = countdown |> Num.to_f32
         |> Num.div 1_00
@@ -372,26 +376,48 @@ render_countdown! = |countdown|
     }
 
 render_map! = |hex_map, texture|
-    List.concat(
-        hex_map.border
-            |> List.map(|c|
-                HexTile.make_tile(c, Basalt)
-            ),
-        Dict.values hex_map.tiles
+    # foo_ = List.concat(
+    #     hex_map.border
+    #         |> List.map(|c|
+    #             HexTile.make_tile(c, Basalt)
+    #         ),
+    #     Dict.values hex_map.tiles
+    # )
+
+    List.sort_with(Dict.values hex_map.tiles, |a_, b_|
+        a = a_.cell
+        b = b_.cell
+        if a.row < b.row then
+            LT
+        else if b.row < a.row then
+            GT
+        else if a.column < b.column then
+            LT
+        else if b.column < a.column then
+            GT
+        else
+            EQ
     )
-    |> List.for_each!(|tile|
-        tx_pos = HexTile.texture_position tile (Hex.hexSize * 2)
-        drawHex! tile.cell texture tx_pos White
+    |> List.map_with_index(|tile, index|
+        (tile, index)
+    )
+    |> List.for_each!(|(tile, index)|
+        tx_pos = HexTile.texture_position tile 65 89
+        drawHex! tile.cell texture tx_pos index
     )
 
-    List.for_each!(List.join hex_map.launch_pads, |pad|
-        tx_pos = HexTile.texture_position { cell: pad, terrain: Lava } (Hex.hexSize * 2)
-        drawHex! pad texture tx_pos White
+    List.for_each!(
+        List.join hex_map.launch_pads |> List.sort_with |a, b|
+            PointyHex.cell_sorter(a, b)
+                ,
+        |pad|
+            tx_pos = HexTile.texture_position { cell: pad, terrain: Lava } 65 89
+            drawHex! pad texture tx_pos White
     )
-    List.for_each!(hex_map.center, |pad|
-        tx_pos = HexTile.texture_position { cell: pad, terrain: Basalt } (Hex.hexSize * 2)
-        drawHex! pad texture tx_pos White
-    )
+#     List.for_each!(hex_map.center, |pad|
+#         tx_pos = HexTile.texture_position { cell: pad, terrain: Basalt } 64 90
+#         drawHex! pad texture tx_pos White
+#     )
 
 drawPath! = |listOfPoints, color, thickness, connected|
     first = List.first listOfPoints ?? { x: 0, y: 0 }
@@ -406,12 +432,13 @@ drawPath! = |listOfPoints, color, thickness, connected|
     else
         Draw.circle! { color, radius: thickness, center: first }
 
-drawHex! = |cell, texture, pos, color|
+drawHex! = |cell, texture, pos, i|
+
     center =
-        hexToPixel (doubled (cell.column) (cell.row))
+        PointyHex.hex_to_pixel (doubled (cell.column) (cell.row))
     offset =
         center
-        |> Hex.addPoint { x: (-1 * Hex.hexSize), y: -1 * Hex.hexSize }
+        |> Hex.addPoint { x: (-1 * PointyHex.horizontal_spacing), y: -1 * PointyHex.vertical_spacing }
     tint = White
     Draw.texture_rec! {
         texture,
@@ -420,16 +447,21 @@ drawHex! = |cell, texture, pos, color|
         source: {
             x: pos.x,
             y: pos.y,
-            width: Hex.hexSize * 2,
-            height: Hex.hexSize * 2,
+            width: PointyHex.horizontal_spacing * 2,
+            height: PointyHex.vertical_spacing * 2,
         },
     }
-    # cellText = "${cell.column |> Num.to_str}, ${cell.row |> Num.to_str}"
+
+    # cellText =
+    #     """
+    #     ${Inspect.to_str i}
+    #     ${cell.column |> Num.to_str}, ${cell.row |> Num.to_str}
+    #     """
     # Draw.text! {
-    #     color,
-    #     size: 24,
+    #     color: Black,
+    #     size: 12,
     #     text: cellText,
-    #     pos: { x: center.x - 24, y: center.y - 12 },
+    #     pos: { x: center.x - 12, y: center.y - 12 },
     # }
 
 # drawHexOutline! = \cell, translate, color ->
@@ -719,7 +751,7 @@ drawHex! = |cell, texture, pos, color|
 #     height: Num.toU32 100,
 # }
 
-drawUnit! : Unit -> _
+drawUnit! : Unit => _
 drawUnit! = \unit ->
     point = Hex.addPoint unit.position { x: 4, y: 2 }
     drawTo = {
@@ -732,7 +764,7 @@ drawUnit! = \unit ->
     }
     # border = armyColor unit.army
 
-    outlinePoint = Hex.addPoint point { x: (Hex.hexSize / -2), y: 16 }
+    outlinePoint = Hex.addPoint point { x: (PointyHex.hex_width / -2), y: 16 }
     (readyColors, width) =
         when unit.readiness is
             Cooldown timer ->
@@ -751,51 +783,41 @@ drawUnit! = \unit ->
     Draw.rectangle! {
         color: if unit.army == Confederates then Black else Navy,
         rect: {
-            width: 82,
-            height: 82,
-            x: drawTo.x - (82 / 2),
-            y: drawTo.y - (82 / 2),
+            width: 40,
+            height: 40,
+            x: drawTo.x - 24 - 4,
+            y: drawTo.y - 24 - 8,
         }
     }
-    # Draw.rectangle! {
-    #                 # color: if unit.army == Confederates then Silver else RGBA(11, 137, 252, 255),
-    #     color: Black,
-    #     rect: {
-    #         width: 78,
-    #         height: 78,
-    #         x: drawTo.x - (78 / 2),
-    #         y: drawTo.y - (78 / 2),
-    #     }
-    # }
     Draw.rectangle! {
         color: if unit.army == Confederates then Silver else RGBA(11, 137, 252, 255),
         rect: {
-            width: 64,
-            height: 64,
-            x: drawTo.x - (64 / 2),
-            y: drawTo.y - (64 / 2),
+            width: 40,
+            height: 40,
+            x: drawTo.x - (20) - 4,
+            y: drawTo.y - (20) - 8,
         }
     }
     Draw.circle! {
-        center: { x: drawTo.x, y: drawTo.y - 12 },
-        radius: 20,
+        center: { x: drawTo.x, y: drawTo.y - 8 },
+        radius: 10,
         color: Black,
     }
     _ = when unit.type is
         Cavalry  -> Draw.circle! {
-            center: { x: drawTo.x, y: drawTo.y - 12 },
-            radius: 16,
+            center: { x: drawTo.x, y: drawTo.y - 8 },
+            radius: 6,
             color: White,
         }
         Artillery -> Draw.circle! {
-            center: { x: drawTo.x, y: drawTo.y - 12 },
-            radius: 16,
+            center: { x: drawTo.x, y: drawTo.y - 8 },
+            radius: 6,
             color: Maroon,
         }
         Infantry -> Draw.circle! {
             color: Red,
-            center: { x: drawTo.x, y: drawTo.y - 12 },
-            radius: 16,
+            center: { x: drawTo.x, y: drawTo.y - 8 },
+            radius: 6,
         }
     Draw.rectangle_gradient_h! {
         left: readyColors.fill,
@@ -807,4 +829,3 @@ drawUnit! = \unit ->
             height: 8
         }
     }
-    renderHexOutline! unit.cell Hex.hexSize (RGBA 0 0 0 0)

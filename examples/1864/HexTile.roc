@@ -14,9 +14,9 @@ module [
   init,
   make_tile
 ]
+import PointyHex
 import Hex exposing [Doubled, doubled]
 import Graph
-import Noise
 
 Terrain : [Sand, Gravel, Field, Rocky, Stone, Pasture, Mountain, Granite, Forest, Basalt, Lava, Water]
 
@@ -35,6 +35,14 @@ HexMap : {
   center: List Doubled,
   launch_pads: List (List Doubled),
 }
+# empty = {
+#   tiles: Dict.empty {},
+#   min_cell: doubled(0, 0),
+#   max_cell: doubled(0, 0),
+#   border: [],
+#   center: [],
+#   launch_pads: [],
+# }
 
 init: Doubled, Doubled, _ -> HexMap
 init = |min_cell, max_cell, noise_fn|
@@ -43,12 +51,13 @@ init = |min_cell, max_cell, noise_fn|
     top_right = doubled(max_cell.column + 1, top_left.row)
     bottom_right = doubled(top_right.column, max_cell.row + 1)
     bottom_left = doubled(top_left.column, bottom_right.row)
-    List.join([
-      Hex.cubeLerp top_left top_right,
-      Hex.cubeLerp top_left bottom_left,
-      Hex.cubeLerp top_right bottom_right,
-      Hex.cubeLerp bottom_left bottom_right,
-    ])
+    []
+    # List.join([
+    #   Hex.cubeLerp top_left top_right,
+    #   Hex.cubeLerp top_left bottom_left,
+    #   Hex.cubeLerp top_right bottom_right,
+    #   Hex.cubeLerp bottom_left bottom_right,
+    # ])
   # column_count = max_cell.column - min_cell.column |> Num.to_f32
   # row_count = max_cell.row - min_cell.row |> Num.to_f32
   tile_maker = terrain_from_tile { min_cell, max_cell, noise_fn }
@@ -86,7 +95,7 @@ init = |min_cell, max_cell, noise_fn|
     max_cell,
     border,
     tiles,
-    center: List.concat([doubled(0, 0), doubled(-2, 0), doubled(2, 0)], Hex.doubleNeighbors),
+    center: [ doubled(0, 0) ],
     launch_pads: [
       [ doubled(-1, -3), doubled(0, -4), doubled(1, -3) ],
       [ doubled(-1, 3), doubled(0, 4), doubled(1, 3) ],
@@ -125,7 +134,7 @@ neighbors = |map|
   clamped = Hex.clampCube map.min_cell map.max_cell
   |cell|
     (
-        List.map Hex.doubleNeighbors |n| Hex.add n cell
+        PointyHex.neighbors cell
         |> List.keep_if clamped
         |> List.keep_if |c| List.contains center c |> Bool.not
     )
@@ -189,23 +198,24 @@ next_terrain = |terrain|
     Lava -> Water
     Water -> Sand
 
-texture_position = |tile, size|
+texture_position = |tile, width, height|
   when tile.terrain is
     Sand -> {x: 0, y: 0}
-    Gravel -> {x: 1 * size, y: 0 }
-    Field -> {x: 2 * size, y: 0 }
+    # _ -> { x: 0, y: 0 }
+    Gravel -> {x: 1 * width, y: 0 }
+    Field -> {x: 3 * width, y: 3 * height }
 
-    Rocky -> {x: 0, y: size * 1 }
-    Stone -> {x: 1 * size, y: size * 1 }
-    Pasture -> {x: 2 * size, y: size * 1 }
+    Rocky -> {x: 0, y: height * 1 }
+    Stone -> {x: 1 * width, y: height * 1 }
+    Pasture -> {x: 3 * width, y: height * 3 }
 
-    Mountain -> {x: 0 * size, y: size * 2 }
-    Granite -> { x: 1 * size, y: size * 2 }
-    Forest -> { x: 2 * size, y: size * 2  }
+    Mountain -> {x: 2 * width, y: height * 0 }
+    Granite -> { x: 3 * width, y: height * 3 }
+    Forest -> { x: 3 * width, y: height * 3  }
 
-    Basalt -> {x: 0 * size, y: size * 3 }
-    Lava -> {x: 1 * size, y: size * 3 }
-    Water -> {x: 2 * size, y: size * 3 }
+    Basalt -> {x: 2 * width, y: height * 3 }
+    Lava -> {x: 3 * width, y: height * 0 }
+    Water -> {x: 0 * width, y: height * 4 }
 
 
 get_cell_cost = |map|
@@ -225,17 +235,8 @@ make_path_finder = |map, is_occupied|
   |from, dest|
     estimator = |candidate|
       Hex.hexDistance candidate dest |> Num.to_f32
-    cost_fn = |start, end|
-      # cost = Dict.get map.tiles end
-      #   |> Result.map_ok .terrain
-      #   |> Result.with_default Basalt
-      #   |> terrain_cost
-      cost = get_cost end
-      lerpPath = Hex.cubeLerp start dest |> List.get 1
-      when lerpPath is
-          Ok next if next == end -> cost - 0.1
-          Ok _ -> cost
-          Err _ -> terrain_cost Basalt
+    cost_fn = |_, end|
+      get_cost end
 
     Graph.astar3 {
       isTarget: \c -> c == dest,

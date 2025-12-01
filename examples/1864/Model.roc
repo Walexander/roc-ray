@@ -51,7 +51,9 @@ YearOfDecision : {
 initialize! : Camera, RocRay.Texture, _, _ => YearOfDecision
 initialize! =  |camera, hexTexture, sounds, camera_settings|
     seed = Effect.random_i32! 1 10000
-    map = HexTile.init(doubled(-6, -6), doubled(6, 6), Noise.seeded_perlin2d seed)
+    noise_fn = Noise.seeded_perlin2d seed
+    map = HexTile.init(doubled(-10, -4), doubled(10, 4), noise_fn)
+
     units = Unit.initial
     selectedIndex = List.first units
         |> |r|
