@@ -182,10 +182,10 @@ expect
 initial = [
     make { id: 5, type: Cavalry, army: Union, cell: doubled -9 -3 },
     make { id: 4, type: Infantry, army: Union, cell: doubled -8 -2 },
-    make { id: 3, type: Infantry, army: Union, cell: doubled 6 -2 },
-    make { id: 6, type: Artillery, army: Confederates, cell: doubled 7 3 },
-    make { id: 7, type: Cavalry, army: Confederates, cell: doubled 8 2 },
-    make { id: 8, type: Infantry, army: Confederates, cell: doubled 6 2 },
+    make { id: 3, type: Infantry, army: Union, cell: doubled -10 -2 },
+    make { id: 6, type: Artillery, army: Confederates, cell: doubled 12 -4 },
+    make { id: 7, type: Cavalry, army: Confederates, cell: doubled 10 -2 },
+    make { id: 8, type: Infantry, army: Confederates, cell: doubled 12 -2 },
 ]
 
 updateReadiness: Unit -> Unit

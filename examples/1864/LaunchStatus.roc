@@ -1,5 +1,5 @@
-module [update]
-import Hex exposing [Doubled, lerp]
+module [update, get_launch_pad_state]
+import Hex exposing [Doubled]
 import Unit exposing [Unit]
 LaunchPad : List Doubled
 
@@ -11,6 +11,10 @@ get_launch_state = |hex_map, units|
     padOwners = List.map hex_map.launch_pads \pad ->
         getPadOwner units pad
     getLaunchStatus padOwners
+
+get_launch_pad_state = |units, pad|
+    getPadOwner units pad
+
 
 getPadOwner : List Unit, LaunchPad -> [Owned [Union, Confederates], Neutral]
 getPadOwner = |units, pad|

@@ -5,6 +5,7 @@ import GameActions
 # import Assets
 import Hex exposing [Doubled, doubled, pixelToHex]
 import PointyHex
+import AI
 import HexTile
 
 import Noise
@@ -62,7 +63,7 @@ screen = {
 camera_settings = {
     target: { x: 0.0, y: 0 },
     offset: {x: screen.width / 2, y: screen.height / 2 - 80},
-    zoom: 1.2,
+    zoom: 1.125,
     rotation: 0
 }
 init! : {} => Result YearOfDecision _
@@ -70,20 +71,26 @@ init! = |{}|
     RocRay.init_window! { width: screen.width, height: screen.height, title: "Stupid STuff" }
     RocRay.set_target_fps! 60
     hexTexture = Texture.load!("examples/1864/assets/kenney-tiles.png")?
+    top_tiles = Texture.load!("examples/1864/assets/topTiles.png")?
+    units = Texture.load!("examples/1864/assets/aliens.png")?
     camera = Camera.create!(camera_settings)?
-    zap = Sound.load!("examples/assets/sound/sound.wav")?
+    power_up = Sound.load!("examples/1864/assets/power-up.mp3")?
+    power_down = Sound.load!("examples/1864/assets/power-down.mp3")?
     ok =  Sound.load!("examples/1864/assets/yessir.mp3")?
     horse = Sound.load!("examples/1864/assets/horse.mp3")?
     wagon = Sound.load!("examples/1864/assets/wagon.mp3")?
     baseState : YearOfDecision
-    baseState = Model.initialize! camera hexTexture { zap, ok, horse, wagon } camera_settings
+    baseState = Model.initialize!(
+        camera,
+        { units, top_tiles, full_tiles: hexTexture },
+        { power_up, power_down, ok, horse, wagon },
+        camera_settings
+    )
     Ok baseState
-
 
 render! : YearOfDecision, RocRay.PlatformState => Result YearOfDecision []
 render! = |model, pf|
     dt = pf.timestamp.last_render_end - pf.timestamp.last_render_start
-
 
     isOccupied = |cube| List.contains (model.units |> List.map .cell) cube
 
@@ -109,6 +116,7 @@ render! = |model, pf|
         """
             Mouse to World: ( $(Num.round mouse_world.x|>Num.to_str), ${ Num.round mouse_world.y |> Num.to_str } )
             Hover Cell: ${ Inspect.to_str hover_cell }
+            Hover Cell pixel: ${ Inspect.to_str(PointyHex.hex_to_pixel hover_cell) }
             Countdown = ${model.countdown |> Num.to_str}
             Pct=${countdown_pct |> Num.mul 100 |> to_fixed 0}%, Seed = ${model.seed |> Num.to_str}; A=${intensity|>to_fixed 3}
             Trauma=${model.trauma |> to_fixed 3}
@@ -116,12 +124,14 @@ render! = |model, pf|
     player_move_ = GameActions.inputs_to_move(model, isOccupied, unit_from_cell, mouse_world, pf.keys, pf.mouse.buttons)
 
     world: YearOfDecision
+
     world = model
         |> Trauma.process_trauma player_move_
         |> LaunchStatus.update
         |> LaunchCountdown.update(Num.to_u32 dt)
         |> Movement.update(dt, isOccupied, path_finder)
         |> GameActions.update!(player_move_, path_finder)
+        |> AI.update path_finder isOccupied dt
         |> |world_|  { world_ & hoverCell: mouseCell2, selectedCell }
         |> |world_| { world_ &
             glowing:
@@ -151,6 +161,13 @@ render! = |model, pf|
         render_debug! world  pf.mouse.position pf.keys debugText
 
     render_sound! world player_move_
+
+    if world.launch_state != model.launch_state then
+        when world.launch_state is
+            InControl _ -> Sound.play! world.sounds.power_up
+            Stalemate -> Sound.play! world.sounds.power_down
+    else {}
+
 
     Ok world
 
@@ -207,8 +224,10 @@ render_game! = |model, pf, path_finder|
             when result is
                 Ok u -> u
                 Err _ -> crash "must have non empty unit list"
-    straightLine = cubePath |> List.map |point| PointyHex.hex_to_pixel point
-    cubePath = path_finder(PointyHex.pixel_to_hex(summary_unit.position), model.hoverCell)
+
+    # cubePath = path_finder(PointyHex.pixel_to_hex(summary_unit.position), model.hoverCell)
+
+
     unitPath_ =
         summary_unit.lastPath
         |> List.map PointyHex.hex_to_pixel
@@ -219,23 +238,28 @@ render_game! = |model, pf, path_finder|
         |{}|
             render_map! model.map model.hexTexture
 
+            List.for_each! model.map.launch_pads |pad|
+                state = LaunchStatus.get_launch_pad_state model.units pad
+                tile_type = when state is
+                    Neutral -> Grey
+                    Owned Union -> Blue
+                    Owned Confederates -> Red
+                List.for_each! pad |cell| draw_top_tile! model.textures.top_tiles cell tile_type
 
-           if Keys.down pf.keys KeyLeftControl then
-               drawPath! straightLine Navy 5 Bool.false
-           else {}
-
-           max_radius = 32
+           max_radius = 28
            drawPath! unitPath_ White 5 Bool.false
            renderHexOutline! model.hoverCell  (PointyHex.vertical_spacing + 4) Navy
-           List.range { start: At 0, end: Before 8 }
-               |> List.for_each! |i|
-                   Draw.circle_lines! {
-                       center: PointyHex.hex_to_pixel model.hoverCell ,
-                       color: Navy,
-                       radius: Num.to_f32 (max_radius - i)
-                   }
+           render_countdown! model.countdown
 
-           (center, radius) = when model.glowing is
+           List.range { start: At 0, end: Before 8 }
+           |> List.for_each! |i|
+            Draw.circle_lines! {
+                center: PointyHex.hex_to_pixel model.hoverCell |> Hex.addPoint { y: -8, x: 0 },
+                color: Navy,
+                radius: Num.to_f32 (max_radius - i)
+            }
+
+           (center_, radius) = when model.glowing is
                None ->
                    c = PointyHex.hex_to_pixel summary_unit.dest
                    (c, max_radius)
@@ -243,13 +267,9 @@ render_game! = |model, pf, path_finder|
                    c = PointyHex.hex_to_pixel cell
                    (c, max_radius |> Num.to_f32 |> Num.div 8 |> Num.mul (Num.to_f32 anim.frame_index) |> Num.round)
 
+           center = Hex.addPoint center_ { y: -8, x: 0 }
            List.range { start: At 0, end: Before 4 }
                |> List.for_each! |i|
-                   Draw.circle_lines! {
-                       center,
-                       color: RGBA(250, 250, 250, 255),
-                       radius: Num.to_f32 (max_radius - i)
-                   }
                    Draw.circle_lines! {
                        center,
                        color: RGBA(255, 250, 250, 255),
@@ -260,8 +280,17 @@ render_game! = |model, pf, path_finder|
                        color: RGBA(255, 250, 250, 255),
                        radius: Num.to_f32 (radius - i)
                    }
-           List.for_each!(model.units, |unit| drawUnit! unit)
-           render_countdown! model.countdown
+                   Draw.circle_lines! {
+                       center,
+                       color: Black,
+                       radius: Num.to_f32 (max_radius - i)
+                   }
+           List.for_each!(model.units, |unit| drawUnit! unit model.textures.units)
+           if Keys.down pf.keys KeyLeftControl then
+                cube_path = path_finder summary_unit.cell model.hoverCell
+                straightLine = cube_path |> List.map |point| PointyHex.hex_to_pixel point
+                drawPath! straightLine Navy 5 Bool.false
+           else {}
     {}
 
 render_sound! = |model, player_move|
@@ -280,11 +309,9 @@ render_sound! = |model, player_move|
 update_camera! = |model, pf|
     old_settings = model.base_camera
     intensity = model.trauma * model.trauma * model.trauma
-    amplitude = 5.0 * intensity
-    frequency = pf.frame_count |> Num.to_f32 |> Num.mul 15.5
-    _ = if pf.frame_count % 60 == 0 then
-        dbg "pf.last_render_end = ${Inspect.to_str pf.timestamp.last_render_end}, frame_count = ${Inspect.to_str pf.frame_count}"
-    else ""
+    # f = pf.timestamp.render_start |> Num.sub pf.timestamp.init_start
+    amplitude = 2.0 * intensity
+    frequency = pf.timestamp.render_start |> Num.sub pf.timestamp.init_start |> Num.to_f32 |> Num.mul 0.33
     updated_camera_settings = { old_settings &
         target: {
             x: (model.base_camera.target.x + Noise.perlin2d(frequency, 0) * amplitude)
@@ -294,20 +321,22 @@ update_camera! = |model, pf|
         },
         rotation:
             model.base_camera.rotation +
-            Noise.perlin2d(frequency, frequency) * 5 * intensity
+            Noise.perlin2d(frequency, frequency) * 2.5 * intensity
 
     }
     Camera.update!(model.camera, updated_camera_settings)
     intensity
 
 render_trauma_bar! = |trauma, intensity|
-    gauge_size = screen.height - 84 - 16
+    gauge_size = 128
     gauge_width = 16
+
+    y_offset = screen.height - gauge_size - 32
 
     Draw.rectangle!{
         rect: {
             x: 8,
-            y: 32,
+            y: y_offset,
             height: gauge_size + 16,
             width: gauge_width * 2 + 3 * 4,
         },
@@ -316,7 +345,7 @@ render_trauma_bar! = |trauma, intensity|
     Draw.rectangle!{
         rect: {
             x: 8 + 4,
-            y: 32 + 4,
+            y: y_offset + 8,
             height: gauge_size + 4,
             width: gauge_width,
         },
@@ -325,7 +354,7 @@ render_trauma_bar! = |trauma, intensity|
     Draw.rectangle!{
         rect: {
             x: 8 + 6,
-            y: 32 + 6 + ( gauge_size - gauge_size * trauma - 2) ,
+            y: y_offset + 8 + (gauge_size - gauge_size * trauma - 2) ,
             height: gauge_size * trauma + 2,
             width: gauge_width - 4,
         },
@@ -334,7 +363,7 @@ render_trauma_bar! = |trauma, intensity|
     Draw.rectangle!{
         rect: {
             x: 8 + 8 + gauge_width,
-            y: 32 + 4,
+            y: y_offset + 8,
             height: gauge_size + 4,
             width: gauge_width,
         },
@@ -343,7 +372,7 @@ render_trauma_bar! = |trauma, intensity|
     Draw.rectangle!{
         rect: {
             x: 8 + 8 + gauge_width + 2,
-            y: 32 + 6 + ( gauge_size - gauge_size * intensity - 2) ,
+            y: y_offset + 8 + ( gauge_size - gauge_size * intensity - 2) ,
             height: gauge_size * intensity + 2,
             width: gauge_width - 4,
         },
@@ -351,9 +380,9 @@ render_trauma_bar! = |trauma, intensity|
     }
 
 render_countdown! = |countdown|
-    diameter = 64
-    text_size = 64
-    center = { x: 0 , y: 0 }
+    diameter = 48
+    text_size = 48
+    center = { x: 0, y: 24 }
     text = countdown |> Num.to_f32
         |> Num.div 1_00
         |> Num.round
@@ -375,6 +404,7 @@ render_countdown! = |countdown|
         text
     }
 
+render_map! : HexTile.HexMap, _ => _
 render_map! = |hex_map, texture|
     # foo_ = List.concat(
     #     hex_map.border
@@ -383,41 +413,42 @@ render_map! = |hex_map, texture|
     #         ),
     #     Dict.values hex_map.tiles
     # )
-
-    List.sort_with(Dict.values hex_map.tiles, |a_, b_|
-        a = a_.cell
-        b = b_.cell
-        if a.row < b.row then
-            LT
-        else if b.row < a.row then
-            GT
-        else if a.column < b.column then
-            LT
-        else if b.column < a.column then
-            GT
-        else
-            EQ
-    )
-    |> List.map_with_index(|tile, index|
-        (tile, index)
-    )
-    |> List.for_each!(|(tile, index)|
-        tx_pos = HexTile.texture_position tile 65 89
-        drawHex! tile.cell texture tx_pos index
-    )
+    all_pads = List.join hex_map.launch_pads
+    launch_tiles = hex_map.launch_pads |> List.join_map |pads|
+        List.map pads |cell| HexTile.make_tile cell Basalt
+    tiles =
+        Dict.values hex_map.tiles
+        |> List.drop_if |tile| List.contains all_pads tile.cell
+        |> List.concat(launch_tiles)
+        |> List.sort_with |a, b| PointyHex.cell_sorter a.cell b.cell
 
     List.for_each!(
-        List.join hex_map.launch_pads |> List.sort_with |a, b|
-            PointyHex.cell_sorter(a, b)
-                ,
+        tiles,
         |pad|
-            tx_pos = HexTile.texture_position { cell: pad, terrain: Lava } 65 89
-            drawHex! pad texture tx_pos White
+            tx_pos = HexTile.texture_position pad 65 89
+            tint = if List.contains hex_map.center pad.cell then Black else White
+            drawHex! pad.cell texture tx_pos tint
     )
-#     List.for_each!(hex_map.center, |pad|
-#         tx_pos = HexTile.texture_position { cell: pad, terrain: Basalt } 64 90
-#         drawHex! pad texture tx_pos White
-#     )
+
+draw_top_tile! = |texture, cell, type|
+    center = PointyHex.hex_to_pixel cell
+    offset = { x: center.x - 27, y: center.y - 40 }
+    source =
+    when type is
+        Blue -> { x: 55 * 0, y: 1 * 57, height: 57, width: 55 }
+        Grey  -> { x: 55 * 0, y: 2 * 57, height: 57, width: 55 }
+        Red  -> { x: 55 * 1, y: 3 * 57, height: 57, width: 55 }
+    tint = when type is
+        Blue -> Blue
+        Grey -> Gray
+        Red -> Red
+
+    Draw.texture_rec! {
+        texture,
+        pos: offset,
+        tint,
+        source,
+    }
 
 drawPath! = |listOfPoints, color, thickness, connected|
     first = List.first listOfPoints ?? { x: 0, y: 0 }
@@ -432,14 +463,15 @@ drawPath! = |listOfPoints, color, thickness, connected|
     else
         Draw.circle! { color, radius: thickness, center: first }
 
-drawHex! = |cell, texture, pos, i|
+drawHex! = |cell, texture, pos, tint|
 
     center =
-        PointyHex.hex_to_pixel (doubled (cell.column) (cell.row))
+        # PointyHex.hex_to_pixel (doubled (cell.column) (cell.row))
+        PointyHex.hex_to_pixel cell
     offset =
         center
-        |> Hex.addPoint { x: (-1 * PointyHex.horizontal_spacing), y: -1 * PointyHex.vertical_spacing }
-    tint = White
+        |> Hex.addPoint { x: (-1 * 32), y: -1 * 44 }
+    # tint = if cell == doubled(0, 0) || cell == doubled(-1, 1) || cell == doubled(1, 1) then Black else White
     Draw.texture_rec! {
         texture,
         pos: offset,
@@ -751,8 +783,8 @@ drawHex! = |cell, texture, pos, i|
 #     height: Num.toU32 100,
 # }
 
-drawUnit! : Unit => _
-drawUnit! = \unit ->
+drawUnit! : Unit, _ => _
+drawUnit! = |unit, texture|
     point = Hex.addPoint unit.position { x: 4, y: 2 }
     drawTo = {
         x: point.x,
@@ -774,58 +806,65 @@ drawUnit! = \unit ->
                     |> Num.div unit.cooldownRate
                 w = Hex.lerp 0 64 t |> Num.round
                 (
-                    { fill: Red, border: Black },
+                    { start: Red, end: Green },
                     w,
                 )
 
-            Ready -> ({ fill: Blue, border: Black }, Hex.horizontalSpace |> Num.round)
-            Moving _ -> ({ fill: RGBA 0 0 0 0, border: Black }, Hex.horizontalSpace |> Num.round)
+            Ready -> ({ start: White, end: Green }, Hex.horizontalSpace |> Num.round)
+            Moving _ -> ({ start: White, end: White }, Hex.horizontalSpace |> Num.round)
+    # Draw.rectangle! {
+    #     color: if unit.army == Confederates then Black else Navy,
+    #     rect: {
+    #         width: 40,
+    #         height: 40,
+    #         x: drawTo.x - 24 - 4,
+    #         y: drawTo.y - 24 - 8,
+    #     }
+    # }
+    source = { x: 0, y: 0, width: 40, height: 62 }
+    source_ = when unit.type is
+        Infantry -> { source & x: source.width * 0, y: source.height * 0 }
+        Cavalry -> { source & x: source.width * 1, y: source.height * 0 }
+        Artillery -> { source & x: source.width * 0, y: source.height * 2 }
+
     Draw.rectangle! {
-        color: if unit.army == Confederates then Black else Navy,
+        color: if unit.army == Confederates then RGBA(192, 192, 192, 200) else RGBA(0, 128, 255, 200),
         rect: {
-            width: 40,
-            height: 40,
-            x: drawTo.x - 24 - 4,
-            y: drawTo.y - 24 - 8,
-        }
-    }
-    Draw.rectangle! {
-        color: if unit.army == Confederates then Silver else RGBA(11, 137, 252, 255),
-        rect: {
-            width: 40,
-            height: 40,
+            width: 48,
+            height: 24,
             x: drawTo.x - (20) - 4,
-            y: drawTo.y - (20) - 8,
+            y: drawTo.y ,
         }
     }
-    Draw.circle! {
-        center: { x: drawTo.x, y: drawTo.y - 8 },
-        radius: 10,
-        color: Black,
+    Draw.texture_rec! {
+        pos: { x: drawTo.x - 24, y: drawTo.y - 48},
+        source: source_,
+        texture,
+        tint: White,
     }
-    _ = when unit.type is
-        Cavalry  -> Draw.circle! {
-            center: { x: drawTo.x, y: drawTo.y - 8 },
-            radius: 6,
-            color: White,
-        }
-        Artillery -> Draw.circle! {
-            center: { x: drawTo.x, y: drawTo.y - 8 },
-            radius: 6,
-            color: Maroon,
-        }
-        Infantry -> Draw.circle! {
-            color: Red,
-            center: { x: drawTo.x, y: drawTo.y - 8 },
-            radius: 6,
-        }
-    Draw.rectangle_gradient_h! {
-        left: readyColors.fill,
-        right: Red,
-        rect: {
-            x: outlinePoint.x + 4,
-            y: outlinePoint.y,
-            width: Hex.horizontalSpace / 2,
-            height: 8
-        }
-    }
+    # _ = when unit.type is
+    #     Cavalry  -> Draw.circle! {
+    #         center: { x: drawTo.x, y: drawTo.y - 16 },
+    #         radius: 6,
+    #         color: Fuchsia,
+    #     }
+    #     Artillery -> Draw.circle! {
+    #         center: { x: drawTo.x, y: drawTo.y - 16 },
+    #         radius: 6,
+    #         color: Maroon,
+    #     }
+    #     Infantry -> Draw.circle! {
+    #         color: Purple,
+    #         center: { x: drawTo.x, y: drawTo.y - 16 },
+    #         radius: 6,
+    #     }
+    # Draw.rectangle_gradient_h! {
+    #     right: readyColors.end,
+    #     left: readyColors.start,
+    #     rect: {
+    #         x: outlinePoint.x + 4,
+    #         y: outlinePoint.y - 12,
+    #         width: Hex.horizontalSpace / 2,
+    #         height: 8
+    #     }
+    # }

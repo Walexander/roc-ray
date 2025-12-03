@@ -29,9 +29,7 @@ HexMap : {
   tiles: Dict Doubled HexTile,
   min_cell: Doubled,
   max_cell: Doubled,
-  # clamped: Doubled -> Bool,
-  # neighbors: Doubled -> List Doubled,
-  border: List Doubled,
+  # border: List Doubled,
   center: List Doubled,
   launch_pads: List (List Doubled),
 }
@@ -46,20 +44,12 @@ HexMap : {
 
 init: Doubled, Doubled, _ -> HexMap
 init = |min_cell, max_cell, noise_fn|
-  border =
-    top_left = doubled(min_cell.column - 1, min_cell.row - 1)
-    top_right = doubled(max_cell.column + 1, top_left.row)
-    bottom_right = doubled(top_right.column, max_cell.row + 1)
-    bottom_left = doubled(top_left.column, bottom_right.row)
-    []
-    # List.join([
-    #   Hex.cubeLerp top_left top_right,
-    #   Hex.cubeLerp top_left bottom_left,
-    #   Hex.cubeLerp top_right bottom_right,
-    #   Hex.cubeLerp bottom_left bottom_right,
-    # ])
-  # column_count = max_cell.column - min_cell.column |> Num.to_f32
-  # row_count = max_cell.row - min_cell.row |> Num.to_f32
+  # border =
+  #   top_left = doubled(min_cell.column - 1, min_cell.row - 1)
+  #   top_right = doubled(max_cell.column + 1, top_left.row)
+  #   bottom_right = doubled(top_right.column, max_cell.row + 1)
+  #   bottom_left = doubled(top_left.column, bottom_right.row)
+  #   []
   tile_maker = terrain_from_tile { min_cell, max_cell, noise_fn }
   tiles =
     ## for each column from min to max
@@ -76,7 +66,6 @@ init = |min_cell, max_cell, noise_fn|
         else
           (min_cell.row + 1, max_cell.row - 1)
 
-      # col_norm = (Num.to_f32(column) / column_count)
       List.range({
         start: At min_row,
         end: Before(max_row + 1 |> Num.to_i32), step: 2
@@ -84,21 +73,21 @@ init = |min_cell, max_cell, noise_fn|
       |> List.map |row|
         cell = doubled(column, row)
         tile_maker cell
-        # row_norm = Num.to_f32(row) / row_count
-        # noise = Noise.perlin2d(2.5 * row_norm, 1 * col_norm)
-        # terrain= terrain_from_height(noise)
-        # { terrain, cell, }
     |> List.walk (Dict.empty {}) |dict, tile| Dict.insert dict tile.cell tile
 
   {
     min_cell,
     max_cell,
-    border,
     tiles,
-    center: [ doubled(0, 0) ],
+    center: [
+      doubled(-1, 1), doubled(1, 1), doubled(0, 0),
+      doubled(5, -3), doubled(4, -2), doubled(6, -4), doubled(5, -1)
+      # doubled(6, 2), doubled(5, 3),
+    ],
     launch_pads: [
-      [ doubled(-1, -3), doubled(0, -4), doubled(1, -3) ],
-      [ doubled(-1, 3), doubled(0, 4), doubled(1, 3) ],
+      [ doubled(-4, 2), doubled(-3, 3)],
+      [ doubled(4, 2), doubled(3, 3)],
+      [ doubled(-1, -3), doubled(0, -2), doubled(1, -3)],
     ]
   }
 
@@ -201,28 +190,32 @@ next_terrain = |terrain|
 texture_position = |tile, width, height|
   when tile.terrain is
     Sand -> {x: 0, y: 0}
-    # _ -> { x: 0, y: 0 }
-    Gravel -> {x: 1 * width, y: 0 }
+    Gravel -> {x: 2 * width, y: 4 * height }
     Field -> {x: 3 * width, y: 3 * height }
 
     Rocky -> {x: 0, y: height * 1 }
-    Stone -> {x: 1 * width, y: height * 1 }
+    Stone -> {x: 3 * width, y: height * 1 }
     Pasture -> {x: 3 * width, y: height * 3 }
 
     Mountain -> {x: 2 * width, y: height * 0 }
     Granite -> { x: 3 * width, y: height * 3 }
     Forest -> { x: 3 * width, y: height * 3  }
 
-    Basalt -> {x: 2 * width, y: height * 3 }
     Lava -> {x: 3 * width, y: height * 0 }
+    Basalt -> {x: 2 * width, y: height * 1 }
     Water -> {x: 0 * width, y: height * 4 }
 
 
 get_cell_cost = |map|
-  |cell|
-    Dict.get map.tiles cell
+  |dest, start, end|
+    best_path = PointyHex.lerp_path start dest |> List.get 1
+    Dict.get map.tiles end
     |> Result.map_ok .terrain
     |> Result.map_ok terrain_cost
+    |> Result.map_ok |cost|
+        when best_path is
+          Ok next if next == end -> cost - 0.1
+          _ -> cost
     |> Result.with_default 100_000_000.0
 
 make_path_finder = |map, is_occupied|
@@ -234,9 +227,9 @@ make_path_finder = |map, is_occupied|
 
   |from, dest|
     estimator = |candidate|
-      Hex.hexDistance candidate dest |> Num.to_f32
-    cost_fn = |_, end|
-      get_cost end
+      PointyHex.hex_distance candidate dest |> Num.to_f32
+    cost_fn = |start, end|
+      get_cost dest start end
 
     Graph.astar3 {
       isTarget: \c -> c == dest,

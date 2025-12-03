@@ -16,6 +16,7 @@ PlayerMove : [ IncreaseTimer,
   ToggleTerrain Hex.Doubled HexTile.Terrain,
   NoMove
 ]
+
 MoveUnitData : {
   unit_index: I8,
   to: Hex.Doubled
@@ -73,4 +74,4 @@ update! = |model, move, path_finder|
           Num.max(0, model.countdown |> Num.sub_wrap 1_000)
       else 0 }
     ResetGame ->
-      Model.initialize!(model.camera, model.hexTexture, model.sounds, model.base_camera)
+      Model.initialize!(model.camera, model.textures, model.sounds, model.base_camera)

@@ -36,7 +36,7 @@ updateMovement = |unit, map, dt_|
     when unit.readiness is
         Ready | Cooldown _ -> unit
         Moving { start, end, t } ->
-            movement_cost = get_cost unit.cell
+            movement_cost = get_cost unit.dest unit.cell (PointyHex.pixel_to_hex end)
             newT = t + dt * unit.moveRate / movement_cost
             newPos = Hex.pointLerp(start, end, newT)
             if newT >= 1 then
