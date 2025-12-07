@@ -14,5 +14,5 @@ process_trauma = |world, move|
   { world &
       trauma:
         Num.max(Hex.lerp(world.trauma, timer_trauma, 0.25), player_trauma)
-        |> Num.max world.trauma |> Num.sub 0.01
+        |> Num.max world.trauma |> Num.sub 0.0075
   }

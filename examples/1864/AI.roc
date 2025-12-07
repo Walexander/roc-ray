@@ -3,7 +3,7 @@ import Unit
 import PointyHex
 
 # update : YearOfDecision, _, I32 -> YearOfDecision
-update = |world, path_finder, is_occupied, dt|
+update = |world, path_finder, is_occupied|
   pads = List.join world.map.launch_pads
 
   orders = List.keep_if(world.units, |u| u.army == world.ai_army)

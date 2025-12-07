@@ -1,4 +1,4 @@
-module [isAlive, range, new, takeHit, health, make, Health]
+module [isAlive, update, range, new, takeHit, health, make, Health]
 Health := { now : U32, base : U32 }
 make : U32 -> Health
 make = \base -> @Health { base: base, now: base }
@@ -52,3 +52,16 @@ testCombatant = Health.new {
 expect
     actual = range testCombatant
     actual == 1
+
+update = |world|
+    {
+        world&
+        units: List.map world.units | u |
+            when u.health is
+                Dead _ -> u
+                Living h if isAlive h -> u
+                Living _ -> {
+                    u&
+                    health: Dead 0
+                }
+    }

@@ -81,13 +81,16 @@ init = |min_cell, max_cell, noise_fn|
     tiles,
     center: [
       doubled(-1, 1), doubled(1, 1), doubled(0, 0),
-      doubled(5, -3), doubled(4, -2), doubled(6, -4), doubled(5, -1)
-      # doubled(6, 2), doubled(5, 3),
+      # doubled(5, -3), doubled(4, -2), doubled(6, -4), doubled(5, -1),
+      doubled(-11, 3), doubled(-12, 2), doubled(-10, 4),
+      doubled(-11, 3), doubled(-12, -2), doubled(-10, -4),doubled(-11, -3),
+      doubled(11, 3), doubled(12, 2), doubled(10, 4),
+      doubled(-11, -3), doubled(12, -2), doubled(10, -4),doubled(11, -3),
     ],
     launch_pads: [
       [ doubled(-4, 2), doubled(-3, 3)],
       [ doubled(4, 2), doubled(3, 3)],
-      [ doubled(-1, -3), doubled(0, -2), doubled(1, -3)],
+      [ doubled(-1, -1), doubled(0, -2), doubled(1, -1)],
     ]
   }
 

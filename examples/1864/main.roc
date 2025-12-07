@@ -1,11 +1,16 @@
-app [Model, init!, render!] { rr: platform "../../platform/main.roc" }
+app [Model, init!, render!] {
+    rr: platform "../../platform/main.roc",
+    rand: "https://github.com/lukewilliamboswell/roc-random/releases/download/0.5.0/yDUoWipuyNeJ-euaij4w_ozQCWtxCsywj68H0PlJAdE.tar.br",
+}
 # import Utils exposing [frameCountToSeconds]
 import Unit exposing [Unit]
 import GameActions
+import rand.Random
 # import Assets
-import Hex exposing [Doubled, doubled, pixelToHex]
+import Hex
 import PointyHex
 import AI
+import Health
 import HexTile
 
 import Noise
@@ -24,36 +29,9 @@ import Trauma
 import LaunchStatus
 import LaunchCountdown
 import Animation
+import Particle
 
 Model : YearOfDecision
-LaunchPad : List Doubled
-
-palette = {
-    color1: 0xfce4a8,
-    color2: 0x71969f,
-    color3: 0xd71a21,
-    color4: 0x01334e,
-}
-redPosterPalette = {
-    color1: 0xe8d6c0,
-    color2: 0x92938d,
-    color3: 0xa1281c,
-    color4: 0x000000,
-}
-
-# redAlert = 0xc4181f
-# greenAlert = 0x426e5d
-unionPalette = palette
-confederatePalette = redPosterPalette
-
-defaultGamepad = {
-    up: Bool.false,
-    down: Bool.false,
-    left: Bool.false,
-    right: Bool.false,
-    button1: Bool.false,
-    button2: Bool.false,
-}
 
 screen = {
     width: 1024,
@@ -112,8 +90,13 @@ render! = |model, pf|
 
     countdown_pct = Num.max(0, 1 - (Num.to_f32 model.countdown / Num.to_f32 model.countdown_start))
     intensity = update_camera! model pf
+
+    rand = Random.step model.rand Random.bounded_u32(0, 1_000_000)
     debugText =
         """
+            Random: ${rand.value |> Num.to_f32 |> Num.div 1_000_000 |> Num.to_str}
+            ECS Size: ${model.ecs.current_size |> Num.to_str}
+            Game Time: ${Inspect.to_str model.game_time}
             Mouse to World: ( $(Num.round mouse_world.x|>Num.to_str), ${ Num.round mouse_world.y |> Num.to_str } )
             Hover Cell: ${ Inspect.to_str hover_cell }
             Hover Cell pixel: ${ Inspect.to_str(PointyHex.hex_to_pixel hover_cell) }
@@ -122,16 +105,25 @@ render! = |model, pf|
             Trauma=${model.trauma |> to_fixed 3}
         """
     player_move_ = GameActions.inputs_to_move(model, isOccupied, unit_from_cell, mouse_world, pf.keys, pf.mouse.buttons)
+    _ = if pf.frame_count %  60 == 0 then
+        dbg "ECS dump: ${Inspect.to_str model.ecs.scalable}\nMoveable: ${Inspect.to_str model.ecs.positionable}"
+    else ""
 
     world: YearOfDecision
 
-    world = model
+    world = { model& game_time: model.game_time + dt, rand: rand.state }
         |> Trauma.process_trauma player_move_
         |> LaunchStatus.update
         |> LaunchCountdown.update(Num.to_u32 dt)
+        |> Particle.update dt
         |> Movement.update(dt, isOccupied, path_finder)
         |> GameActions.update!(player_move_, path_finder)
-        |> AI.update path_finder isOccupied dt
+        |> Health.update
+        |> |world_|
+            if world_.game_time >= 2_500 then
+                AI.update world_ path_finder isOccupied
+            else
+                world_
         |> |world_|  { world_ & hoverCell: mouseCell2, selectedCell }
         |> |world_| { world_ &
             glowing:
@@ -194,7 +186,7 @@ render_debug! = |model, mouse_pos, keys, debug_text|
     summary_text_color = if summary_unit.army == Confederates then Red else Silver
     summary_text_dims = Effect.measure_text! summary_text 24 1 |> InternalVector.to_vector2
     Draw.text! { pos: { x: 128+10, y: screen.height - (Num.to_f32 summary_text_dims.y + 24) }, text: summary_text, size: 24, color: summary_text_color }
-    debug_text_dims = Effect.measure_text! debug_text 24 1 |> InternalVector.to_vector2
+    debug_text_dims = Effect.measure_text! debug_text 16 1 |> InternalVector.to_vector2
 
     if Keys.down keys KeyLeftShift then
         debug_pos = {
@@ -202,11 +194,24 @@ render_debug! = |model, mouse_pos, keys, debug_text|
             y: screen.height - (Num.to_f32 debug_text_dims.y) - 24
         }
         Draw.text! {
-            pos: debug_pos, text: debug_text, size: 24, color: White }
+            pos: debug_pos, text: debug_text, size: 16, color: White }
     else
         {}
 
-renderHexOutline! = \cell, size, color ->
+render_particles! = |ecs|
+    Dict.map ecs.positionable |id, { x, y }|
+        graphic = Dict.get ecs.scalable id
+            |> Result.with_default { radius: 0, color: White }
+        {
+            x, y,
+            radius: graphic.radius,
+            color: graphic.color
+        }
+    |> Dict.values
+    |> List.for_each! |{x, y, radius, color}|
+        Draw.circle! {center: { x, y }, radius: radius * 10, color }
+
+renderHexOutline! = \cell, color ->
     points = PointyHex.points (PointyHex.hex_to_pixel cell)
     drawPath! points color 3 Bool.true
 
@@ -233,64 +238,32 @@ render_game! = |model, pf, path_finder|
         |> List.map PointyHex.hex_to_pixel
         |> List.drop_first 1
         |> List.prepend (summary_unit.position)
-    Draw.with_mode_2d!
-        model.camera
+
+    Draw.with_mode_2d!(
+        model.camera,
         |{}|
-            render_map! model.map model.hexTexture
-
-            List.for_each! model.map.launch_pads |pad|
-                state = LaunchStatus.get_launch_pad_state model.units pad
-                tile_type = when state is
-                    Neutral -> Grey
-                    Owned Union -> Blue
-                    Owned Confederates -> Red
-                List.for_each! pad |cell| draw_top_tile! model.textures.top_tiles cell tile_type
-
-           max_radius = 28
+           render_map! model.map model.hexTexture
+           render_launch_pads! model
            drawPath! unitPath_ White 5 Bool.false
-           renderHexOutline! model.hoverCell  (PointyHex.vertical_spacing + 4) Navy
-           render_countdown! model.countdown
+           renderHexOutline! model.hoverCell Navy
+           countdown_color = when model.launch_state is
+                Stalemate -> Green
+                InControl Union -> Blue
+                InControl Confederates -> Red
+           render_countdown! model.countdown countdown_color
 
-           List.range { start: At 0, end: Before 8 }
-           |> List.for_each! |i|
-            Draw.circle_lines! {
-                center: PointyHex.hex_to_pixel model.hoverCell |> Hex.addPoint { y: -8, x: 0 },
-                color: Navy,
-                radius: Num.to_f32 (max_radius - i)
-            }
+           render_glow! model summary_unit
 
-           (center_, radius) = when model.glowing is
-               None ->
-                   c = PointyHex.hex_to_pixel summary_unit.dest
-                   (c, max_radius)
-               Running (cell, anim) ->
-                   c = PointyHex.hex_to_pixel cell
-                   (c, max_radius |> Num.to_f32 |> Num.div 8 |> Num.mul (Num.to_f32 anim.frame_index) |> Num.round)
+           render_units! model
 
-           center = Hex.addPoint center_ { y: -8, x: 0 }
-           List.range { start: At 0, end: Before 4 }
-               |> List.for_each! |i|
-                   Draw.circle_lines! {
-                       center,
-                       color: RGBA(255, 250, 250, 255),
-                       radius: Num.to_f32 (radius - 4 - i)
-                   }
-                   Draw.circle_lines! {
-                       center,
-                       color: RGBA(255, 250, 250, 255),
-                       radius: Num.to_f32 (radius - i)
-                   }
-                   Draw.circle_lines! {
-                       center,
-                       color: Black,
-                       radius: Num.to_f32 (max_radius - i)
-                   }
-           List.for_each!(model.units, |unit| drawUnit! unit model.textures.units)
            if Keys.down pf.keys KeyLeftControl then
                 cube_path = path_finder summary_unit.cell model.hoverCell
                 straightLine = cube_path |> List.map |point| PointyHex.hex_to_pixel point
                 drawPath! straightLine Navy 5 Bool.false
            else {}
+
+           render_particles! model.ecs
+        )
     {}
 
 render_sound! = |model, player_move|
@@ -306,13 +279,13 @@ render_sound! = |model, player_move|
             |> Sound.play!
         _ -> {}
 
-update_camera! = |model, pf|
+update_camera! = |model, _|
     old_settings = model.base_camera
     intensity = model.trauma * model.trauma * model.trauma
-    # f = pf.timestamp.render_start |> Num.sub pf.timestamp.init_start
-    amplitude = 2.0 * intensity
-    frequency = pf.timestamp.render_start |> Num.sub pf.timestamp.init_start |> Num.to_f32 |> Num.mul 0.33
-    updated_camera_settings = { old_settings &
+    amplitude = 5.0 * intensity
+    frequency = model.game_time |> Num.to_f32 |> Num.mul 1.002
+    updated_camera_settings = {
+        old_settings &
         target: {
             x: (model.base_camera.target.x + Noise.perlin2d(frequency, 0) * amplitude)
                 |> Num.round |> Num.to_f32,
@@ -327,6 +300,59 @@ update_camera! = |model, pf|
     Camera.update!(model.camera, updated_camera_settings)
     intensity
 
+render_launch_pads! = |model|
+    List.for_each! model.map.launch_pads |pad|
+        state = LaunchStatus.get_launch_pad_state model.units pad
+        tile_type = when state is
+            Neutral -> Grey
+            Owned Union -> Blue
+            Owned Confederates -> Red
+        List.for_each! pad |cell| draw_top_tile! model.textures.top_tiles cell tile_type
+
+render_glow! = |model, summary_unit|
+   max_radius = 28
+   # List.range { start: At 0, end: Before 8 }
+   # |> List.for_each! |i|
+   #  Draw.circle_lines! {
+   #      center: PointyHex.hex_to_pixel model.hoverCell |> Hex.addPoint { y: -8, x: 0 },
+   #      color: Navy,
+   #      radius: Num.to_f32 (max_radius - i)
+   #  }
+
+   (center_, radius) = when model.glowing is
+       None ->
+           c = PointyHex.hex_to_pixel summary_unit.dest
+           (c, max_radius)
+       Running (cell, anim) ->
+           c = PointyHex.hex_to_pixel cell
+           (c, max_radius |> Num.to_f32 |> Num.div 8 |> Num.mul (Num.to_f32 anim.frame_index) |> Num.round)
+
+   center = Hex.addPoint center_ { y: -8, x: 0 }
+   List.range { start: At 0, end: Before 4 }
+       |> List.for_each! |i|
+           Draw.circle_lines! {
+               center,
+               color: RGBA(255, 250, 250, 255),
+               radius: Num.to_f32 (radius - 4 - i)
+           }
+           Draw.circle_lines! {
+               center,
+               color: RGBA(255, 250, 250, 255),
+               radius: Num.to_f32 (radius - i)
+           }
+           Draw.circle_lines! {
+               center,
+               color: Black,
+               radius: Num.to_f32 (max_radius - i)
+           }
+
+render_units! = |model|
+   model.units
+    |> List.drop_if |u|
+        when u.health is
+            Living _ -> Bool.false
+            Dead _ -> Bool.true
+    |> List.for_each!(|unit| drawUnit! unit model.textures.units)
 render_trauma_bar! = |trauma, intensity|
     gauge_size = 128
     gauge_width = 16
@@ -379,7 +405,7 @@ render_trauma_bar! = |trauma, intensity|
         color: Teal,
     }
 
-render_countdown! = |countdown|
+render_countdown! = |countdown, color|
     diameter = 48
     text_size = 48
     center = { x: 0, y: 24 }
@@ -395,7 +421,7 @@ render_countdown! = |countdown|
     text_dims = Effect.measure_text! text text_size 1 |> InternalVector.to_vector2
     Draw.circle!{ radius: diameter, center, color: White }
     Draw.text!{
-        color: Red,
+        color,
         pos: {
             x: center.x - text_dims.x / 2,
             y: center.y - text_dims.y / 2,
@@ -828,7 +854,7 @@ drawUnit! = |unit, texture|
         Artillery -> { source & x: source.width * 0, y: source.height * 2 }
 
     Draw.rectangle! {
-        color: if unit.army == Confederates then RGBA(192, 192, 192, 200) else RGBA(0, 128, 255, 200),
+        color: if unit.army == Confederates then RGBA(192, 0, 0, 200) else RGBA(0, 128, 255, 200),
         rect: {
             width: 48,
             height: 24,
