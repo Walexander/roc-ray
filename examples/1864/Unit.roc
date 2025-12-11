@@ -50,7 +50,6 @@ make = \{ type, id: inId, army, cell } ->
                 cooldownRate: 60.0 * 4,
                 range: 2,
                 velocity: { x: 0, y: 0 },
-                # sprite: Assets.cannon,
             }
 
         Infantry ->

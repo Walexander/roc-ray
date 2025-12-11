@@ -106,7 +106,7 @@ render! = |model, pf|
         """
     player_move_ = GameActions.inputs_to_move(model, isOccupied, unit_from_cell, mouse_world, pf.keys, pf.mouse.buttons)
     _ = if pf.frame_count %  60 == 0 then
-        dbg "ECS dump: ${Inspect.to_str model.ecs.scalable}\nMoveable: ${Inspect.to_str model.ecs.positionable}"
+        dbg "ECS dump: ${Inspect.to_str model.ecs.killable}"
     else ""
 
     world: YearOfDecision

@@ -5,7 +5,6 @@ import Unit exposing [Unit]
 import HexTile exposing [HexMap]
 import Hex exposing [ doubled, Doubled ]
 import Noise
-import Health
 import Animation exposing [Animation]
 import Particle
 import rand.Random
@@ -25,8 +24,6 @@ Orders : [
   Idle,
 ]
 
-
-
 YearOfDecision : {
     frameCount : U64,
     ai_army: Army,
@@ -34,7 +31,6 @@ YearOfDecision : {
     # inputs : (W4.Gamepad, W4.Gamepad),
     # lastInputs : (W4.Gamepad, W4.Gamepad),
     game_time: U64,
-    health: Dict Unit.Id Health.Health,
     selectedIndex: I8,
     border: List Doubled,
     hexTexture : RocRay.Texture,
@@ -94,7 +90,6 @@ initialize! =  |camera, textures, sounds, camera_settings|
         ai_intents: Dict.empty {},
         frameCount: Num.to_u64 0,
         hoverCell: doubled 0 0,
-        health: Dict.empty {},
         selectedCell: doubled 0 0,
         selectedIndex,
         player: { x: 0, y: 0 },
@@ -115,5 +110,5 @@ initialize! =  |camera, textures, sounds, camera_settings|
         glowing: None,
         launch_state: Stalemate,
         textures,
-        ecs: Particle.make rand |> Particle.spawn { x: 0, y: 0 } 32 #|> Particle.spawn { x: 50, y: 25 } 1,
+        ecs: Particle.make rand |> Particle.spawn({position: { x: 0, y: 0 }, num_particles: 32 })
     }
