@@ -11,6 +11,7 @@ module [
     NetworkState,
     NetworkPeers,
     NetworkMessage,
+    Shader,
     UUID,
     rgba,
     init_window!,
@@ -141,6 +142,8 @@ Texture : Effect.Texture
 ## performed to it (like a canvas), making it useful for effects, buffering, or off-screen
 ## rendering. The result can then be used like a regular texture.
 RenderTexture : Effect.RenderTexture
+
+Shader : Effect.Shader
 
 ## A loaded sound resource, used to play audio.
 Sound : Effect.Sound

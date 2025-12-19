@@ -11,11 +11,13 @@ hosted [
     PlatformStateFromHost,
     PeerState,
     Font,
+    Shader,
     to_log_level,
 
     # EFFECTS
     get_screen_size!,
     get_screen_to_world_2d!,
+    get_shader_location!,
     exit!,
     draw_text!,
     draw_text_font!,
@@ -29,6 +31,9 @@ hosted [
     draw_circle!,
     draw_circle_gradient!,
     draw_circle_lines!,
+    draw_ellipse!,
+    draw_ellipse_lines!,
+    draw_ring!,
     set_target_fps!,
     set_draw_fps!,
     take_screenshot!,
@@ -40,6 +45,8 @@ hosted [
     begin_texture!,
     end_texture!,
     begin_mode_2d!,
+    begin_shader_mode!,
+    end_shader_mode!,
     end_mode_2d!,
     log!,
     load_texture!,
@@ -59,6 +66,8 @@ hosted [
     sleep_millis!,
     random_i32!,
     load_font!,
+    set_shader_value!,
+    load_shader!,
     configure_web_rtc!,
 ]
 
@@ -141,6 +150,10 @@ draw_rectangle_gradient_h! : RocRectangle, RocColor, RocColor => {}
 draw_circle! : RocVector2, F32, RocColor => {}
 draw_circle_gradient! : RocVector2, F32, RocColor, RocColor => {}
 draw_circle_lines! : RocVector2, F32, RocColor => {}
+draw_ellipse! : RocVector2, F32, F32, RocColor => {}
+draw_ellipse_lines! : RocVector2, F32, F32, RocColor => {}
+
+draw_ring! : RocVector2, F32, F32, F32, F32, I32, RocColor => {}
 
 set_target_fps! : I32 => {}
 set_draw_fps! : Bool, RocVector2 => {}
@@ -156,6 +169,9 @@ update_camera! : Camera, RocVector2, RocVector2, F32, F32 => {}
 
 begin_mode_2d! : Camera => {}
 end_mode_2d! : Camera => {}
+
+begin_shader_mode! : Shader => {}
+end_shader_mode! : Shader => {}
 
 Texture := Box {}
 load_texture! : Str => Result Texture Str
@@ -190,5 +206,11 @@ sleep_millis! : U64 => {}
 
 Font := Box U64
 load_font! : Str => Result Font Str
+
+
+Shader := Box { id: U32, locs: List I32 }
+load_shader! : Str, Str => Result Shader Str
+get_shader_location! : Shader, Str => Result I32 Str
+set_shader_value! : Shader, I32, F32 => {}
 
 configure_web_rtc! : Str => {}

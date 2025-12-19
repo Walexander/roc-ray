@@ -2,7 +2,7 @@ use config::ExitErrCode;
 use platform_mode::PlatformEffect;
 use roc_std::{RocBox, RocList, RocResult, RocStr};
 use roc_std_heap::ThreadSafeRefcountedResourceHeap;
-use std::ffi::{c_int, CString};
+use std::ffi::{self, CString, c_int, c_void};
 
 #[cfg(target_family = "wasm")]
 extern crate console_error_panic_hook;
@@ -459,6 +459,57 @@ extern "C" fn roc_fx_draw_rectangle_gradient_h(
 }
 
 #[no_mangle]
+extern "C" fn roc_fx_draw_ellipse(
+    center: &glue::RocVector2,
+    h: f32,
+    v: f32,
+    color: glue::RocColor,
+) {
+    if let Err(msg) = platform_mode::update(PlatformEffect::DrawRectangleGradientH) {
+        display_fatal_error_message(msg, ExitErrCode::EffectNotPermitted);
+    }
+    let (x, y) = center.to_components_c_int();
+    unsafe {
+        raylib::DrawEllipse(x, y, h, v, color.into());
+    }
+}
+
+#[no_mangle]
+extern "C" fn roc_fx_draw_ellipse_lines(
+    center: &glue::RocVector2,
+    h: f32,
+    v: f32,
+    color: glue::RocColor,
+) {
+    if let Err(msg) = platform_mode::update(PlatformEffect::DrawRectangleGradientH) {
+        display_fatal_error_message(msg, ExitErrCode::EffectNotPermitted);
+    }
+    let (x, y) = center.to_components_c_int();
+    unsafe {
+        raylib::DrawEllipseLines(x, y, h, v, color.into());
+    }
+}
+
+#[no_mangle]
+extern "C" fn roc_fx_draw_ring(
+    center: &glue::RocVector2,
+    inner: f32,
+    outer: f32,
+    start_angle: f32,
+    end_angle: f32,
+    segments: i32,
+    color: glue::RocColor,
+) {
+    if let Err(msg) = platform_mode::update(PlatformEffect::DrawRectangleGradientH) {
+        display_fatal_error_message(msg, ExitErrCode::EffectNotPermitted);
+    }
+    unsafe {
+        raylib::DrawRing(center.into(), inner, outer, start_angle, end_angle, segments, color.into());
+    }
+}
+
+
+#[no_mangle]
 extern "C" fn roc_fx_get_screen_size() -> glue::ScreenSize {
     if let Err(msg) = platform_mode::update(PlatformEffect::GetScreenSize) {
         display_fatal_error_message(msg, ExitErrCode::EffectNotPermitted);
@@ -639,6 +690,50 @@ extern "C" fn roc_fx_begin_mode_2d(boxed_camera: RocBox<()>) {
     }
 }
 
+#[allow(unused_variables)]
+#[no_mangle]
+extern "C" fn roc_fx_begin_shader_mode(boxed_shader: RocBox<()>) {
+
+    unsafe {
+        let shader: &mut raylib::Shader =
+            ThreadSafeRefcountedResourceHeap::box_to_resource(boxed_shader);
+
+        raylib::BeginShaderMode(*shader);
+    }
+}
+
+#[allow(unused_variables)]
+#[no_mangle]
+extern "C" fn roc_fx_get_shader_location(boxed_shader: RocBox<()>, uniform_name: &RocStr) -> RocResult<i32, RocStr> {
+    let uniform = CString::new(uniform_name.to_string().as_str()).unwrap();
+
+    let location = unsafe {
+        let shader: &mut raylib::Shader =
+            ThreadSafeRefcountedResourceHeap::box_to_resource(boxed_shader);
+        let location = raylib::GetShaderLocation(*shader, uniform.as_ptr());
+        if location < 0 {
+            return RocResult::err(
+            format!("Uniform location for '{}' not found", uniform_name.to_string())
+                .as_str()
+                .into(),
+            )
+        } else {
+            return RocResult::ok(location);
+        }
+    };
+}
+
+#[allow(unused_variables)]
+#[no_mangle]
+extern "C" fn roc_fx_set_shader_value(boxed_shader: RocBox<()>, loc_index: i32, value: f32) {
+    let f = &value as *const f32 as *const c_void;
+    return unsafe {
+        let shader: &mut raylib::Shader =
+            ThreadSafeRefcountedResourceHeap::box_to_resource(boxed_shader);
+        raylib::SetShaderValue(*shader, loc_index, f, raylib::ShaderUniformDataType_SHADER_UNIFORM_FLOAT.try_into().unwrap());
+    }
+}
+
 #[no_mangle]
 extern "C" fn roc_fx_end_mode_2d(_boxed_camera: RocBox<()>) {
     if let Err(msg) = platform_mode::update(PlatformEffect::EndMode2D) {
@@ -674,6 +769,13 @@ extern "C" fn roc_fx_end_texture(_boxed_render_texture: RocBox<()>) {
 
     unsafe {
         raylib::EndTextureMode();
+    }
+}
+
+#[no_mangle]
+extern "C" fn roc_fx_end_shader_mode(_boxed_render_texture: RocBox<()>) {
+    unsafe {
+        raylib::EndShaderMode();
     }
 }
 
@@ -982,6 +1084,27 @@ extern "C" fn roc_fx_load_font(path: &RocStr) -> RocResult<RocBox<()>, RocStr> {
             Ok(roc_box) => RocResult::ok(roc_box),
             Err(_) => {
                 RocResult::err("Unable to load font, out of memory in the font heap. Consider using ROC_RAY_MAX_FONT_HEAP_SIZE env var to increase the heap size.".into())
+            }
+        }
+}
+
+#[no_mangle]
+extern "C" fn roc_fx_load_shader(vertex_shader: &RocStr, fragment_shader: &RocStr) -> RocResult<RocBox<()>, RocStr> {
+    if let Err(msg) = platform_mode::update(PlatformEffect::LoadFont) {
+        display_fatal_error_message(msg, ExitErrCode::EffectNotPermitted);
+    }
+
+    let v_shader_path = CString::new(vertex_shader.to_string().as_str()).unwrap();
+    let f_shader_path = CString::new(fragment_shader.to_string().as_str()).unwrap();
+    let shader = unsafe { raylib::LoadShader(v_shader_path.as_ptr(), f_shader_path.as_ptr()) };
+
+    let heap = roc::shader_heap();
+    let alloc_result = heap.alloc_for(shader);
+
+    match alloc_result {
+            Ok(roc_box) => RocResult::ok(roc_box),
+            Err(_) => {
+                RocResult::err("Unable to load shader, out of memory in the shader heap. Consider using ROC_RAY_MAX_SHADER_HEAP_SIZE env var to increase the heap size.".into())
             }
         }
 }
