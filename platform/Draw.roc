@@ -8,6 +8,7 @@ module [
     rectangle!,
     rectangle_gradient_v!,
     rectangle_gradient_h!,
+    triangle_fan!,
     circle!,
     circle_gradient!,
     circle_lines!,
@@ -15,8 +16,10 @@ module [
     ellipse_lines!,
     texture_rec!,
     render_texture_rec!,
+    render_texture_pro!,
     with_mode_shader!,
     ring!,
+    poly!
 ]
 
 import Effect
@@ -207,6 +210,18 @@ render_texture_rec! : { texture : RenderTexture, source : Rectangle, pos : Vecto
 render_texture_rec! = |{ texture, source, pos, tint }|
     Effect.draw_render_texture_rec!(texture, InternalRectangle.from_rect(source), InternalVector.from_vector2(pos), rgba(tint))
 
+render_texture_pro! : { texture : RenderTexture, source : Rectangle, dest: Rectangle, origin : Vector2, rotation: F32, tint : Color } => {}
+render_texture_pro! = |{ texture, source, dest, origin, rotation, tint }|
+    Effect.draw_render_texture_pro!(
+        texture,
+        InternalRectangle.from_rect(source),
+        InternalRectangle.from_rect(dest),
+        InternalVector.from_vector2(origin),
+        rotation,
+        rgba(tint)
+    )
+
+
 ## Draw rings
 ## ```
 ## Draw.ring! { center: { x: 200, y: 400 }, h: 75, v: 60, color: Fuchsia }
@@ -216,3 +231,12 @@ ring! = |{ center, inner, outer, start, end, segments, color }|
     Effect.draw_ring!(InternalVector.from_vector2(center), inner, outer, start, end, segments, rgba(color))
 
 
+poly! : { center: Vector2, sides: I32, radius: F32, rotation: F32, color: Color } => {}
+poly! = |{ center, sides, radius, rotation, color }|
+    Effect.draw_poly!(InternalVector.from_vector2 center, sides, radius, rotation, rgba(color))
+
+
+triangle_fan! : List Vector2, Color => {}
+triangle_fan! = |points, color|
+    List.map points InternalVector.from_vector2
+    |> Effect.draw_triangle_fan! rgba(color)

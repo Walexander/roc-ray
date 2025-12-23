@@ -607,6 +607,16 @@ extern "C" fn roc_fx_set_draw_fps(show: bool, pos: &glue::RocVector2) {
 }
 
 #[no_mangle]
+extern "C" fn roc_fx_get_camera_matrix_2d(_boxed_camera: RocBox<()>) -> glue::Matrix {
+    let camera: &mut raylib::Camera2D =
+        ThreadSafeRefcountedResourceHeap::box_to_resource(_boxed_camera);
+
+    let matrix = unsafe { raylib::GetCameraMatrix2D(*camera) };
+
+    return matrix.into();
+}
+
+#[no_mangle]
 extern "C" fn roc_fx_create_camera(
     target: &glue::RocVector2,
     offset: &glue::RocVector2,
@@ -731,6 +741,35 @@ extern "C" fn roc_fx_set_shader_value(boxed_shader: RocBox<()>, loc_index: i32, 
         let shader: &mut raylib::Shader =
             ThreadSafeRefcountedResourceHeap::box_to_resource(boxed_shader);
         raylib::SetShaderValue(*shader, loc_index, f, raylib::ShaderUniformDataType_SHADER_UNIFORM_FLOAT.try_into().unwrap());
+    }
+}
+#[allow(unused_variables)]
+#[no_mangle]
+extern "C" fn roc_fx_set_shader_value_int(boxed_shader: RocBox<()>, loc_index: i32, value: i32) {
+    let f = &value as *const i32 as *const c_void;
+    return unsafe {
+        let shader: &mut raylib::Shader =
+            ThreadSafeRefcountedResourceHeap::box_to_resource(boxed_shader);
+        raylib::SetShaderValue(*shader, loc_index, f, raylib::ShaderUniformDataType_SHADER_UNIFORM_INT.try_into().unwrap());
+    }
+}
+#[allow(unused_variables)]
+#[no_mangle]
+extern "C" fn roc_fx_set_shader_value_vec2(boxed_shader: RocBox<()>, loc_index: i32, value: &glue::RocVector2) {
+    let shader: &mut raylib::Shader = ThreadSafeRefcountedResourceHeap::box_to_resource(boxed_shader);
+    let value_ : raylib::Vector2 = value.into();
+    let ptr_ = &value_ as *const raylib::Vector2 as *const c_void;
+    return unsafe {
+        raylib::SetShaderValue(*shader, loc_index, ptr_, raylib::ShaderUniformDataType_SHADER_UNIFORM_VEC2.try_into().unwrap());
+    }
+}
+#[allow(unused_variables)]
+#[no_mangle]
+extern "C" fn roc_fx_set_shader_value_matrix(boxed_shader: RocBox<()>, loc_index: i32, matrix: &glue::Matrix) {
+    return unsafe {
+        let shader: &mut raylib::Shader =
+            ThreadSafeRefcountedResourceHeap::box_to_resource(boxed_shader);
+        raylib::SetShaderValueMatrix(*shader, loc_index, matrix.into());
     }
 }
 
@@ -975,7 +1014,31 @@ extern "C" fn roc_fx_load_texture(path: &RocStr) -> RocResult<RocBox<()>, RocStr
         Err(_) => RocResult::err("Unable to load texture, out of memory in the texture heap. Consider using ROC_RAY_MAX_TEXTURES_HEAP_SIZE env var to increase the heap size.".into()),
     }
 }
+// #[no_mangle]
+// extern "C" fn roc_fx_load_texture_from_bytes(
+//     bytes: &RocList<u8>,
+//     width: i32,
+//     height: i32,
+//     format_code: u32,
+// ) -> RocResult<RocBox<()>, Str> {
+//     if pixel_ptr.is_null() || byte_len == 0 {
+//         return RocResult::err("pixel pointer is null or byte length is 0");
 
+//     }
+//     let data = bytes.as_ptr() as *const c_void;
+
+//     unsafe {
+//         let img = raylib::LoadImageFromMemory(data, width, height, format_code);
+//     }
+//     raylib::core
+// }
+// extern "C" fn roc_fx_send_to_peer(bytes: &RocList<u8>, peer: &glue::PeerUUID) {
+//     if let Err(msg) = platform_mode::update(PlatformEffect::SendMsgToPeer) {
+//         display_fatal_error_message(msg, ExitErrCode::EffectNotPermitted);
+//     }
+
+//     let data = bytes.as_slice().to_vec();
+// }
 #[no_mangle]
 extern "C" fn roc_fx_draw_texture_rec(
     boxed_texture: RocBox<()>,
@@ -1017,6 +1080,61 @@ extern "C" fn roc_fx_draw_render_texture_rec(
             color.into(),
         );
     }
+}
+#[no_mangle]
+extern "C" fn roc_fx_draw_render_texture_pro(
+    boxed_texture: RocBox<()>,
+    source: &glue::RocRectangle,
+    dest: &glue::RocRectangle,
+    origin: &glue::RocVector2,
+    rotation: f32,
+    color: glue::RocColor,
+) {
+    let texture: &mut raylib::RenderTexture =
+        ThreadSafeRefcountedResourceHeap::box_to_resource(boxed_texture);
+
+    unsafe {
+        raylib::DrawTexturePro(
+            texture.texture,
+            source.into(),
+            dest.into(),
+            origin.into(),
+            rotation,
+            color.into(),
+        );
+    }
+}
+
+#[no_mangle]
+extern "C" fn roc_fx_draw_poly(
+    center: &glue::RocVector2,
+    sides: i32,
+    radius: f32,
+    rotation: f32,
+    color: glue::RocColor,
+) {
+    unsafe {
+        raylib::DrawPoly(
+            center.into(),
+            sides,
+            radius,
+            rotation,
+            color.into(),
+        );
+    }
+}
+
+#[no_mangle]
+extern "C" fn roc_fx_set_render_texture_filter(
+    boxed_texture: RocBox<()>,
+    filter_mode: i32,
+) {
+    let texture: &mut raylib::RenderTexture =
+        ThreadSafeRefcountedResourceHeap::box_to_resource(boxed_texture);
+    unsafe {
+        raylib::SetTextureFilter(texture.texture, filter_mode);
+    }
+
 }
 
 #[no_mangle]
@@ -1117,4 +1235,45 @@ extern "C" fn roc_fx_log(msg: &RocStr, _level: i32) {
     }
 
     logger::log(msg.to_string().as_str());
+}
+
+//#[no_mangle]
+//extern "C" fn roc_fx_update_texture(boxed_texture: RocBox<()>, pixel_ptr: *const u8, byte_len: usize,) {
+//    if pixel_ptr.is_null() || byte_len == 0 {
+//        return;
+//    }
+//    unsafe {
+//        let texture: &mut raylib::Texture = ThreadSafeRefcountedResourceHeap::box_to_resource(boxed_texture);
+//    //let font: &mut raylib::Font = ThreadSafeRefcountedResourceHeap::box_to_resource(boxed_font);
+//        let void_ptr = pixel_ptr as *const std::ffi::c_void;
+//        raylib::UpdateTexture(*texture, void_ptr);
+//    }
+//}
+
+// #[repr(C)]
+// pub enum RocPixelFormat {
+//     UncompressedGrayScale =1,
+//     UncompressedGrayAlpha = 2,
+//     UncompressedR5G6B5 = 3,
+//     UncompressedR8G8B8 = 4,
+//     UncompressedR8G8B8A8 = 5,
+// }
+
+#[no_mangle]
+extern "C" fn roc_fx_texture_format(boxed_texture: RocBox<()>) -> u32 {
+    let tex: &raylib::Texture = ThreadSafeRefcountedResourceHeap::box_to_resource(boxed_texture);
+    tex.format as u32
+}
+
+#[no_mangle]
+extern "C" fn roc_fx_draw_triangle_fan(points: &RocList<glue::RocVector2>, color: glue::RocColor) {
+    let tmp: Vec<raylib::Vector2> =
+        points.iter().map(|p| p.into()).collect();
+    unsafe {
+        raylib::DrawTriangleFan(
+            tmp.as_ptr() as *const raylib::Vector2,
+            points.len() as i32,
+            color.into(),
+        );
+    }
 }

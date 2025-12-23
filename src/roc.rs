@@ -97,6 +97,19 @@ pub fn shader_heap() -> &'static ThreadSafeRefcountedResourceHeap<raylib::Shader
     })
 }
 
+// note this is checked and deallocated in the roc_dealloc function
+pub fn matrix_heap() -> &'static ThreadSafeRefcountedResourceHeap<raylib::Matrix> {
+    static MATRIX_HEAP: OnceLock<ThreadSafeRefcountedResourceHeap<raylib::Matrix>> = OnceLock::new();
+    const DEFAULT_ROC_RAY_MAX_MATRIX_HEAP_SIZE: usize = 100;
+    let max_heap_size = std::env::var("ROC_RAY_MAX_MATRIX_HEAP_SIZE")
+        .map(|v| v.parse().unwrap_or(DEFAULT_ROC_RAY_MAX_MATRIX_HEAP_SIZE))
+        .unwrap_or(DEFAULT_ROC_RAY_MAX_MATRIX_HEAP_SIZE);
+    MATRIX_HEAP.get_or_init(|| {
+        ThreadSafeRefcountedResourceHeap::new(max_heap_size)
+            .expect("Failed to allocate mmap for heap references.")
+    })
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn roc_alloc(size: usize, _alignment: u32) -> *mut c_void {
     libc::malloc(size)
@@ -144,6 +157,12 @@ pub unsafe extern "C" fn roc_dealloc(c_ptr: *mut c_void, _alignment: u32) {
     let shader_heap = shader_heap();
     if shader_heap.in_range(c_ptr) {
         shader_heap.dealloc(c_ptr);
+        return;
+    }
+
+    let matrix_heap = matrix_heap();
+    if matrix_heap.in_range(c_ptr) {
+        matrix_heap.dealloc(c_ptr);
         return;
     }
 

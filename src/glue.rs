@@ -370,3 +370,71 @@ pub struct ScreenSize {
 }
 
 roc_refcounted_noop_impl!(ScreenSize);
+
+#[repr(C)]
+pub struct Matrix {
+    pub m0: f32,
+    pub m4: f32,
+    pub m8: f32,
+    pub m12: f32,
+    pub m1: f32,
+    pub m5: f32,
+    pub m9: f32,
+    pub m13: f32,
+    pub m2: f32,
+    pub m6: f32,
+    pub m10: f32,
+    pub m14: f32,
+    pub m3: f32,
+    pub m7: f32,
+    pub m11: f32,
+    pub m15: f32,
+}
+
+
+impl From<&Matrix> for raylib::Matrix {
+    fn from(matrix: &Matrix) -> raylib::Matrix {
+        raylib::Matrix {
+            m0: matrix.m0,
+            m1: matrix.m1,
+            m2: matrix.m2,
+            m3: matrix.m3,
+            m4: matrix.m4,
+            m5: matrix.m5,
+            m6: matrix.m6,
+            m7: matrix.m7,
+            m8: matrix.m8,
+            m9: matrix.m9,
+            m10: matrix.m10,
+            m11: matrix.m11,
+            m12: matrix.m12,
+            m13: matrix.m13,
+            m14: matrix.m14,
+            m15: matrix.m15,
+        }
+    }
+}
+
+impl From<raylib::Matrix> for Matrix {
+    fn from(matrix: raylib::Matrix) -> Matrix {
+        Matrix {
+            m0: matrix.m0,
+            m1: matrix.m1,
+            m2: matrix.m2,
+            m3: matrix.m3,
+            m4: matrix.m4,
+            m5: matrix.m5,
+            m6: matrix.m6,
+            m7: matrix.m7,
+            m8: matrix.m8,
+            m9: matrix.m9,
+            m10: matrix.m10,
+            m11: matrix.m11,
+            m12: matrix.m12,
+            m13: matrix.m13,
+            m14: matrix.m14,
+            m15: matrix.m15,
+        }
+    }
+}
+roc_refcounted_noop_impl!(Matrix);

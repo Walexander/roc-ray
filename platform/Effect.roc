@@ -18,6 +18,7 @@ hosted [
     get_screen_size!,
     get_screen_to_world_2d!,
     get_shader_location!,
+    get_camera_matrix_2d!,
     exit!,
     draw_text!,
     draw_text_font!,
@@ -33,7 +34,9 @@ hosted [
     draw_circle_lines!,
     draw_ellipse!,
     draw_ellipse_lines!,
+    draw_poly!,
     draw_ring!,
+    draw_triangle_fan!,
     set_target_fps!,
     set_draw_fps!,
     take_screenshot!,
@@ -55,6 +58,8 @@ hosted [
     play_sound!,
     create_render_texture!,
     draw_render_texture_rec!,
+    draw_render_texture_pro!,
+    set_render_texture_filter!,
     load_file_to_str!,
     send_to_peer!,
     load_music_stream!,
@@ -67,13 +72,18 @@ hosted [
     random_i32!,
     load_font!,
     set_shader_value!,
+    set_shader_value_vec2!,
+    set_shader_value_matrix!,
     load_shader!,
     configure_web_rtc!,
+    # update_texture!,
+    texture_format!,
 ]
 
 import InternalColor exposing [RocColor]
 import InternalVector exposing [RocVector2]
 import InternalRectangle exposing [RocRectangle]
+import InternalMatrix exposing [RocMatrix]
 
 get_screen_size! : {} => { height : I32, width : I32, z : I64 }
 
@@ -152,6 +162,8 @@ draw_circle_gradient! : RocVector2, F32, RocColor, RocColor => {}
 draw_circle_lines! : RocVector2, F32, RocColor => {}
 draw_ellipse! : RocVector2, F32, F32, RocColor => {}
 draw_ellipse_lines! : RocVector2, F32, F32, RocColor => {}
+draw_poly! : RocVector2, I32, F32, F32, RocColor => {}
+draw_triangle_fan!: List RocVector2, RocColor => {}
 
 draw_ring! : RocVector2, F32, F32, F32, F32, I32, RocColor => {}
 
@@ -177,6 +189,10 @@ Texture := Box {}
 load_texture! : Str => Result Texture Str
 draw_texture_rec! : Texture, RocRectangle, RocVector2, RocColor => {}
 draw_render_texture_rec! : RenderTexture, RocRectangle, RocVector2, RocColor => {}
+draw_render_texture_pro! : RenderTexture, RocRectangle, RocRectangle, RocVector2, F32, RocColor => {}
+set_render_texture_filter! : RenderTexture, I32 => {}
+# update_texture! : Texture, List U8 => {}
+texture_format! : Texture -> U32
 
 Sound := Box {}
 load_sound! : Str => Result Sound Str
@@ -212,5 +228,10 @@ Shader := Box { id: U32, locs: List I32 }
 load_shader! : Str, Str => Result Shader Str
 get_shader_location! : Shader, Str => Result I32 Str
 set_shader_value! : Shader, I32, F32 => {}
+set_shader_value_vec2! : Shader, I32, RocVector2 => {}
+set_shader_value_matrix! : Shader, I32, RocMatrix => {}
+get_camera_matrix_2d! : Camera => RocMatrix
+
+
 
 configure_web_rtc! : Str => {}

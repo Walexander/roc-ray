@@ -25,6 +25,7 @@ module [
     get_screen_size!,
     get_screen_to_world_2d!,
     random_i32!,
+    fade,
 ]
 
 import Mouse
@@ -94,6 +95,7 @@ KeyboardKey : InternalKeyboard.KeyboardKey
 ## ```
 Rectangle : { x : F32, y : F32, width : F32, height : F32 }
 
+
 ## Represents a 2D vector.
 ## ```
 ## { x : F32, y : F32 }
@@ -115,6 +117,8 @@ Vector2 : { x : F32, y : F32 }
 ## ```
 Color : [
     RGBA U8 U8 U8 U8,
+    Clear,
+    Blank,
     White,
     Silver,
     Gray,
@@ -156,24 +160,38 @@ UUID : Network.UUID
 # internal use only
 rgba : Color -> InternalColor.RocColor
 rgba = |color|
+    InternalColor.from_rgba(to_rgba(color))
+
+to_rgba : Color -> { r: U8, g: U8, b: U8, a: U8 }
+to_rgba = |color|
     when color is
-        RGBA(r, g, b, a) -> InternalColor.from_rgba({ r, g, b, a })
-        White -> InternalColor.from_rgba({ r: 255, g: 255, b: 255, a: 255 })
-        Silver -> InternalColor.from_rgba({ r: 192, g: 192, b: 192, a: 255 })
-        Gray -> InternalColor.from_rgba({ r: 128, g: 128, b: 128, a: 255 })
-        Black -> InternalColor.from_rgba({ r: 0, g: 0, b: 0, a: 255 })
-        Red -> InternalColor.from_rgba({ r: 255, g: 0, b: 0, a: 255 })
-        Maroon -> InternalColor.from_rgba({ r: 128, g: 0, b: 0, a: 255 })
-        Yellow -> InternalColor.from_rgba({ r: 255, g: 255, b: 0, a: 255 })
-        Olive -> InternalColor.from_rgba({ r: 128, g: 128, b: 0, a: 255 })
-        Lime -> InternalColor.from_rgba({ r: 0, g: 255, b: 0, a: 255 })
-        Green -> InternalColor.from_rgba({ r: 0, g: 128, b: 0, a: 255 })
-        Aqua -> InternalColor.from_rgba({ r: 0, g: 255, b: 255, a: 255 })
-        Teal -> InternalColor.from_rgba({ r: 0, g: 128, b: 128, a: 255 })
-        Blue -> InternalColor.from_rgba({ r: 0, g: 0, b: 255, a: 255 })
-        Navy -> InternalColor.from_rgba({ r: 0, g: 0, b: 128, a: 255 })
-        Fuchsia -> InternalColor.from_rgba({ r: 255, g: 0, b: 255, a: 255 })
-        Purple -> InternalColor.from_rgba({ r: 128, g: 0, b: 128, a: 255 })
+        RGBA(r, g, b, a) -> ({ r, g, b, a })
+        Blank -> ({r: 0, g: 0, b: 0, a: 0})
+        Clear -> ({r: 255, g: 255, b: 255, a: 0})
+        White -> ({ r: 255, g: 255, b: 255, a: 255 })
+        Silver -> ({ r: 192, g: 192, b: 192, a: 255 })
+        Gray -> ({ r: 128, g: 128, b: 128, a: 255 })
+        Black -> ({ r: 0, g: 0, b: 0, a: 255 })
+        Red -> ({ r: 255, g: 0, b: 0, a: 255 })
+        Maroon -> ({ r: 128, g: 0, b: 0, a: 255 })
+        Yellow -> ({ r: 255, g: 255, b: 0, a: 255 })
+        Olive -> ({ r: 128, g: 128, b: 0, a: 255 })
+        Lime -> ({ r: 0, g: 255, b: 0, a: 255 })
+        Green ->({ r: 0, g: 128, b: 0, a: 255 })
+        Aqua -> ({ r: 0, g: 255, b: 255, a: 255 })
+        Teal -> ({ r: 0, g: 128, b: 128, a: 255 })
+        Blue -> ({ r: 0, g: 0, b: 255, a: 255 })
+        Navy -> ({ r: 0, g: 0, b: 128, a: 255 })
+        Fuchsia -> { r: 255, g: 0, b: 255, a: 255 }
+        Purple -> { r: 128, g: 0, b: 128, a: 255 }
+
+
+
+fade : Color, F32 -> Color
+fade = |color, alpha|
+    alpha_ = if alpha < 0 then 0 else if alpha > 1 then 1 else alpha
+    { r, g, b } = to_rgba(color)
+    RGBA(r, g, b, (Num.to_f32 alpha_ |> Num.mul 255 |> Num.round))
 
 ## Exit the program.
 ## ```
