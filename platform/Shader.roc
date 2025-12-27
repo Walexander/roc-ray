@@ -1,10 +1,15 @@
 module [
     Shader,
+    RenderShader,
     ShaderLocation,
+    RenderShaderLocation,
     load!,
     get_location!,
     set_value!,
     set_value_vec2!,
+    new!,
+    set_f32!,
+    set_vec2!,
     set_value_matrix!,
 ]
 
@@ -12,32 +17,65 @@ import InternalMatrix  exposing [ Matrix ]
 import InternalVector
 import Effect
 
+RenderShaderLocation : [ Loaded ShaderLocation, Empty, Invalid Str ]
+
+RenderShader : {
+    shader: Shader,
+    locations: Dict Str RenderShaderLocation,
+}
+
 Shader : Effect.Shader
 
-ShaderLocation := { loc: I32 }
-# ShaderLocation := { loc: I32 }
+new! : Str, Str, List Str => Result RenderShader [LoadErr(Str)]
+new! = |vertex, fragment, uniforms|
+    shader = load!(vertex, fragment)?
+    locations = List.walk!(uniforms, Dict.empty({}), |a, u|
+        Dict.insert a u get_location!(shader, u)
+    )
+    Ok { shader, locations }
 
-## Sleep the main thread for a given number of milliseconds.
+ShaderLocation := { loc: I32 }
+
 load! : Str, Str => Result Shader [ LoadErr Str ]_
 load! = |vertex, fragment|
     Effect.load_shader! vertex fragment
     |> Result.map_err(LoadErr)
 
-get_location! : Shader, Str => Result ShaderLocation [LoadErr Str]_
+get_location! : Shader, Str => RenderShaderLocation
 get_location! = |shader, identifier|
     Effect.get_shader_location! shader identifier
-    |> Result.map_ok |loc| @ShaderLocation({ loc })
-    |> Result.map_err LoadErr
+    |> Result.map_ok |loc| Loaded @ShaderLocation({ loc })
+    |> Result.map_err |str| Invalid str
+    |> |result| when result is
+        Ok payload -> payload
+        Err err -> err
 
-set_value! : Shader, ShaderLocation, F32 => {}
-set_value! = |shader, @ShaderLocation { loc }, value|
-    Effect.set_shader_value! shader loc value
 
-set_value_vec2! : Shader, ShaderLocation, { x: F32, y: F32 } => {}
-set_value_vec2! = |shader, @ShaderLocation { loc }, {x, y}|
-    Effect.set_shader_value_vec2! shader loc InternalVector.from_xy(x, y)
+set_f32! = |rs, key, value|
+    location = Dict.get(rs.locations, key) |> Result.with_default Empty
+    set_value! rs.shader location value
+    rs
 
-set_value_matrix! : Shader, ShaderLocation,  Matrix => {}
-set_value_matrix! = |shader, @ShaderLocation { loc }, matrix|
-    matrix_ = InternalMatrix.from_matrix(matrix)
-    Effect.set_shader_value_matrix! shader loc matrix_
+set_vec2! = |rs, key, value|
+    location = Dict.get(rs.locations, key) |> Result.with_default Empty
+    set_value_vec2! rs.shader location value
+    rs
+set_value! : Shader, RenderShaderLocation, F32 => {}
+set_value! = |shader, location, value|
+    when location is
+        Loaded @ShaderLocation({ loc }) -> Effect.set_shader_value! shader loc value
+        _ -> {}
+
+set_value_vec2! : Shader, RenderShaderLocation, { x: F32, y: F32 } => {}
+set_value_vec2! = |shader, location, {x, y}|
+    when location is
+        Loaded @ShaderLocation({ loc }) -> Effect.set_shader_value_vec2! shader loc InternalVector.from_xy(x, y)
+        _ -> {}
+
+set_value_matrix! : Shader, RenderShaderLocation,  Matrix => {}
+set_value_matrix! = |shader, location,  matrix|
+    when location is
+        Loaded @ShaderLocation({ loc }) ->
+            matrix_ = InternalMatrix.from_matrix(matrix)
+            Effect.set_shader_value_matrix! shader loc matrix_
+        _ -> {}

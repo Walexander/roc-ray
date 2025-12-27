@@ -4,10 +4,10 @@ import rr.RocRay exposing [Texture, Camera]
 import rr.RocRay
 import rr.Camera
 import rr.Draw
-import rr.Effect
 import rr.RenderTexture
 import rr.Keys
-import rr.Shader exposing [ShaderLocation]
+import rr.Shader exposing []
+import rr.Mouse
 
 import rr.Texture
 
@@ -23,36 +23,32 @@ Model : {
     freq : F32,
     amplitude : F32,
     texture : Texture,
-    shader : Effect.Shader,
     paused: Bool,
+    marker_pos: RocRay.Vector2,
+    fog_shader: Shader.RenderShader,
+    scale_shader: Shader.RenderShader,
     fog: RocRay.RenderTexture,
-    locations : {
-        mvp : ShaderLocation,
-        time : ShaderLocation,
-        frequency : ShaderLocation,
-        amplitude : ShaderLocation,
-    },
+    animation_frames: U32,
 }
 
 center = { x: width / 2, y: height / 2 }
 init! : {} => Result Model _
 init! = |{}|
 
+    RocRay.set_target_fps! 60
+    RocRay.display_fps! { fps: Visible, pos: { x: 10, y: 10 } }
     RocRay.init_window!({ title: "Basic Shapes", width, height })
 
-    shader = (
-        Effect.load_shader!(
-            "examples/assets/vertex-shader.vs",
-            "examples/assets/fragment-shader.fs",
-            # "examples/assets/raylib/examples/shaders/resources/shaders/glsl100/grayscale.fs"
-        )
-        |> Result.map_err |e| LoadErr "Failed to load shader: ${Inspect.to_str e}"
+    fog_shader = Shader.new!(
+        "examples/assets/vertex-shader.vs",
+        "examples/assets/fragment-shader.fs",
+        ["mvp", "time", "frequency", "amplitude"]
     )?
 
     amplitude = 10.333
     freq = 2.0
 
-    texture = Texture.load!("examples/assets/raylib/examples/shaders/resources/plasma.png")?
+    texture = Texture.load!("examples/assets/plasma.png")?
 
     fog_texture = RenderTexture.create!({ width: render_width, height: render_height })?
 
@@ -70,30 +66,19 @@ init! = |{}|
         },
     )?
 
-    locations = {
-        mvp: Shader.get_location!(shader, "mvp")?,
-        time: Shader.get_location!(shader, "time")?,
-        amplitude: Shader.get_location!(shader, "amplitude")?,
-        frequency: Shader.get_location!(shader, "frequency")?,
-    }
-
-    Shader.set_value! shader locations.amplitude amplitude
-    Shader.set_value! shader locations.frequency freq
-
-    matrix = Camera.to_matrix! camera
-    Shader.set_value_matrix! shader locations.mvp matrix
-
     Ok(
         {
-            shader,
+            marker_pos: { x: 0, y: 0 },
+            fog_shader,
+            scale_shader: Shader.new!("examples/assets/scale.vert", "examples/assets/fragment-noop.fs", ["time", "max", "center"])?,
             texture,
             camera,
             freq,
             fog: fog_texture,
             amplitude,
-            locations,
+            animation_frames: 0,
             paused: Bool.false,
-        },
+        }
     )
 
 lerp : F32, F32, F32 -> F32
@@ -102,9 +87,23 @@ lerp = |from, to, t|
 render! : Model, RocRay.PlatformState => Result Model []
 render! = |model, pf|
     game_time = (pf.timestamp.render_start - pf.timestamp.init_start) |> Num.to_f32 |> Num.div 1e3
-    if Bool.not(model.paused) then
-        Shader.set_value! model.shader model.locations.time game_time
+
+
+    marker_pos =
+        if Mouse.pressed(pf.mouse.buttons.left) then
+            RocRay.get_screen_to_world_2d! pf.mouse.position model.camera
+        else model.marker_pos
+
+    _ = if Bool.not(model.paused) then
+        Shader.set_f32!(model.fog_shader, "time", game_time)
+        |> \_ -> {}
     else {}
+
+    animation_frames =
+        if Mouse.pressed(pf.mouse.buttons.left) then 0
+        else if Bool.not(model.paused) then
+            model.animation_frames + 1
+        else model.animation_frames
 
     freq =
         (
@@ -116,6 +115,7 @@ render! = |model, pf|
                 model.freq
         )
         |> Num.max 0
+
 
     amplitude =
         (
@@ -131,55 +131,58 @@ render! = |model, pf|
         )
         |> |a| if Bool.not(model.paused) then lerp a 0 (1/ 60) else a
         |> Num.max 0.01
+    iteration_duration = (60 * 2.5) |> Num.floor
+    duration_f = Num.to_f32 iteration_duration
 
-    Shader.set_value! model.shader model.locations.frequency model.freq
-    Shader.set_value! model.shader model.locations.amplitude model.amplitude
-
-    # right_half = Num.to_f32 col_count |> Num.div 2 |> Num.floor
-    # _ = Draw.with_texture! model.fog Clear |{}|
-    #     List.range  { start: At(0), end: Before(col_count) }
-    #     |> List.join_map |x|
-    #         List.range { start: At(0), end: Before(row_count) }
-    #         |> List.map |y| (x, y)
-    #     # |> List.drop_if |(x, y)| x > 8 && y > 8
-    #     |> List.for_each! |(x, y)|
-    #         color = if x > right_half && y > right_half then Clear else if x < y  then RocRay.fade(Black, 0.95) else RocRay.fade(Black, 0.85)
-    #         Draw.rectangle! {rect: { x: Num.to_f32 x, y: Num.to_f32 y, width: 1, height: 1 }, color }
-
+    rounds = animation_frames |> Num.to_f32 |> Num.div duration_f
+    t = Num.min rounds 1.0
     Draw.draw!(
         Teal,
         |{}|
             Draw.with_mode_2d! model.camera |{}|
+                _ = Shader.set_f32!(model.fog_shader, "amplitude", model.amplitude)
+                    |> Shader.set_f32!("frequency", model.freq)
                 Draw.with_mode_shader!(
-                    model.shader,
+                    model.fog_shader.shader,
                     |{}|
                         draw_center_texture! model.texture { x: -width / 2, y: height / -2 } (width) (height)
                     )
-                # Draw.render_texture_pro!({
-                #     texture: model.fog,
-                #     source: { width: Num.to_f32(render_width), height: Num.to_f32(render_height), x: 0, y: 0 },
-                #     dest: { width, height, x: width / -2, y: height / -2 },
-                #     origin: { x: 0, y: 0 },
-                #     rotation: 0,
-                #     tint: White })
-                # Draw.poly! {
-                #     center: { x: 0, y: 00 },
-                #     sides: 6,
-                #     radius: 25,
-                #     rotation: 90,
-                #     color: Blue,
-                # }
-            # draw_center_texture! model.texture { x: width / -2, y: 0 } (width) (height / 2)
+                # iterations = pf.frame_count |> Num.to_f32 |> Num.div 60 * 5 |> Num.floor
+                # dbg "t = ${Inspect.to_str t}"
+                Draw.with_mode_shader! model.scale_shader.shader |{}|
+                    Shader.set_f32! model.scale_shader "time" t
+                    |> Shader.set_f32! "max" 3.0
+                    |> Shader.set_vec2! "center" marker_pos
+                    |> \_ -> ({})
+                    Draw.ring! {
+                        center: marker_pos,
+                        inner: 12,
+                        outer: 14,
+                        start: 90,
+                        end: 360 + 90,
+                        segments: 6,
+                        color: RocRay.fade(Black, 0.8)
+                    }
+            text =
+                """
+                [Up Dn] Frequency = ${Inspect.to_str freq}
+                [L R] Amp = ${Inspect.to_str amplitude}
+                [Enter]Paused = ${Inspect.to_str model.paused}
+                Center = ${Inspect.to_str marker_pos}
+                """
             Draw.text! {
-                text: "[Up Dn] Frequency = ${Inspect.to_str freq}\n[L R] Amp = ${Inspect.to_str amplitude}\n[Enter]Paused = ${Inspect.to_str model.paused}",
                 size: 16,
+                text,
                 pos: { x: 20, y: 20 },
                 color: White,
             }
 
-            # Draw.render_texture_rec!({ texture: model.fog, source: { width, height, x: 0, y: 0 }, pos: { x: 0, y: 0 }, tint: (RGBA 128 128 128 128) })
     )
-    Ok({ model & freq, amplitude, paused: if Keys.pressed(pf.keys, KeyEnter) then Bool.not model.paused else model.paused })
+    Ok({ model & freq, amplitude,
+            marker_pos,
+            paused: if Keys.pressed(pf.keys, KeyEnter) then Bool.not model.paused else model.paused,
+            animation_frames
+    })
 
 draw_center_texture! = |texture, pos, width_, height_|
 

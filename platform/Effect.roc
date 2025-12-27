@@ -27,6 +27,7 @@ hosted [
     draw_line!,
     draw_line_ex!,
     draw_rectangle!,
+    draw_rectangle_pro!,
     draw_rectangle_gradient_v!,
     draw_rectangle_gradient_h!,
     draw_circle!,
@@ -54,6 +55,7 @@ hosted [
     log!,
     load_texture!,
     draw_texture_rec!,
+    draw_texture_pro!,
     load_sound!,
     play_sound!,
     create_render_texture!,
@@ -78,6 +80,8 @@ hosted [
     configure_web_rtc!,
     # update_texture!,
     texture_format!,
+    begin_blend_mode!,
+    end_blend_mode!
 ]
 
 import InternalColor exposing [RocColor]
@@ -155,6 +159,7 @@ draw_line! : RocVector2, RocVector2, RocColor => {}
 draw_line_ex! : RocVector2, RocVector2, F32, RocColor => {}
 
 draw_rectangle! : RocRectangle, RocColor => {}
+draw_rectangle_pro! : RocRectangle, RocVector2, F32, RocColor => {}
 draw_rectangle_gradient_v! : RocRectangle, RocColor, RocColor => {}
 draw_rectangle_gradient_h! : RocRectangle, RocColor, RocColor => {}
 draw_circle! : RocVector2, F32, RocColor => {}
@@ -183,11 +188,12 @@ begin_mode_2d! : Camera => {}
 end_mode_2d! : Camera => {}
 
 begin_shader_mode! : Shader => {}
-end_shader_mode! : Shader => {}
+end_shader_mode! : {} => {}
 
 Texture := Box {}
 load_texture! : Str => Result Texture Str
 draw_texture_rec! : Texture, RocRectangle, RocVector2, RocColor => {}
+draw_texture_pro! : Texture, RocRectangle, RocRectangle, RocVector2, F32, RocColor => {}
 draw_render_texture_rec! : RenderTexture, RocRectangle, RocVector2, RocColor => {}
 draw_render_texture_pro! : RenderTexture, RocRectangle, RocRectangle, RocVector2, F32, RocColor => {}
 set_render_texture_filter! : RenderTexture, I32 => {}
@@ -235,3 +241,6 @@ get_camera_matrix_2d! : Camera => RocMatrix
 
 
 configure_web_rtc! : Str => {}
+
+begin_blend_mode! : I32 => {}
+end_blend_mode! : {} => {}

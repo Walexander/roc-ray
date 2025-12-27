@@ -6,6 +6,7 @@ module [
     with_mode_2d!,
     with_texture!,
     rectangle!,
+    rectangle_pro!,
     rectangle_gradient_v!,
     rectangle_gradient_h!,
     triangle_fan!,
@@ -15,9 +16,11 @@ module [
     ellipse!,
     ellipse_lines!,
     texture_rec!,
+    texture_pro!,
     render_texture_rec!,
     render_texture_pro!,
     with_mode_shader!,
+    with_blend_mode!,
     ring!,
     poly!
 ]
@@ -66,8 +69,7 @@ with_mode_shader! : Shader, ({} => {}) => {}
 with_mode_shader! = |shader, cmd!|
     Effect.begin_shader_mode!(shader)
     cmd!({})
-    Effect.end_shader_mode!(shader)
-
+    Effect.end_shader_mode!({})
 
 ## Draw to a render texture. Takes a color to clear the texture with.
 with_texture! : RenderTexture, Color, ({} => {}) => {}
@@ -77,6 +79,19 @@ with_texture! = |texture, color, cmd!|
     cmd!({})
 
     Effect.end_texture!(texture)
+
+with_blend_mode! : RocRay.BlendMode, ({} => {}) => {}
+with_blend_mode! = |mode, cmd!|
+    blend_mode = when mode is
+        Alpha -> 0
+        Additive -> 1
+        Multiplied -> 2
+        AddColors -> 3
+        SubtractColors -> 4
+        AlphaPremultiply -> 5
+    Effect.begin_blend_mode! blend_mode
+    cmd!({})
+    Effect.end_blend_mode! {}
 
 ## Draw text on the screen using the default font.
 text! : { font ?? Font, pos : { x : F32, y : F32 }, text : Str, size ?? F32, spacing ?? F32, color ?? Color } => {}
@@ -109,6 +124,16 @@ rectangle! : { rect : Rectangle, color : Color } => {}
 rectangle! = |{ rect, color }|
     Effect.draw_rectangle!(InternalRectangle.from_rect(rect), rgba(color))
 
+## Draw a professional rectangle on the screen.
+## ```
+## Draw.rectangle! { rect: { x: 100, y: 150, width: 250, height: 100 }, color: Aqua }
+## ```
+rectangle_pro! : { rect : Rectangle, origin: Vector2, rotation: F32, color : Color } => {}
+rectangle_pro! = |{ rect, origin, rotation, color }|
+    Effect.draw_rectangle_pro!(InternalRectangle.from_rect(rect),
+        InternalVector.from_xy(origin.x, origin.y),
+        rotation,
+        rgba(color))
 ## Draw a rectangle with a vertical-gradient fill on the screen.
 ## ```
 ## Draw.rectangleGradientV! { rect: { x: 300, y: 250, width: 250, height: 100 }, top: Maroon, bottom: Green }
@@ -196,6 +221,16 @@ texture_rec! : { texture : Texture, source : Rectangle, pos : Vector2, tint : Co
 texture_rec! = |{ texture, source, pos, tint }|
     Effect.draw_texture_rec!(texture, InternalRectangle.from_rect(source), InternalVector.from_vector2(pos), rgba(tint))
 
+texture_pro! : { texture : Texture, source : Rectangle, dest: Rectangle, origin : Vector2, rotation: F32, tint : Color } => {}
+texture_pro! = |{ texture, source, dest, origin, rotation, tint }|
+    Effect.draw_texture_pro!(
+        texture,
+        InternalRectangle.from_rect(source),
+        InternalRectangle.from_rect(dest),
+        InternalVector.from_vector2(origin),
+        rotation,
+        rgba(tint)
+    )
 ## Draw part of a texture.
 ## ```
 ## # Draw the sprite at the player's position.

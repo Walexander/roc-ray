@@ -4,11 +4,8 @@ varying vec2 fragTexCoord;
 varying vec4 fragColor;
 uniform sampler2D texture0;
 uniform vec4 colDiffuse;
-uniform float time;
-uniform float frequency;
-uniform float amplitude;
-
 void main()
 {
-    gl_FragColor = fragColor;
+
+    gl_FragColor = fragColor * vec4(texture2D(texture0, fragTexCoord));
 }

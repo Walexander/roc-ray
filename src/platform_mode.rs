@@ -58,7 +58,6 @@ pub enum PlatformEffect {
     DrawCircle,
     RandomValue,
     DrawCircleGradient,
-    DrawCircleLinesV,
     DrawRectangleGradientV,
     DrawRectangleGradientH,
     SetDrawFPS,
@@ -66,7 +65,6 @@ pub enum PlatformEffect {
     DrawText,
     DrawRectangle,
     DrawLine,
-    DrawLineEx,
     DrawTextureRectangle,
 }
 

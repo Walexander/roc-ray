@@ -2,7 +2,7 @@ use config::ExitErrCode;
 use platform_mode::PlatformEffect;
 use roc_std::{RocBox, RocList, RocResult, RocStr};
 use roc_std_heap::ThreadSafeRefcountedResourceHeap;
-use std::ffi::{self, CString, c_int, c_void};
+use std::ffi::{CString, c_int, c_void};
 
 #[cfg(target_family = "wasm")]
 extern crate console_error_panic_hook;
@@ -348,6 +348,17 @@ extern "C" fn roc_fx_draw_rectangle(rect: &glue::RocRectangle, color: glue::RocC
 
     unsafe {
         raylib::DrawRectangleRec(rect.into(), color.into());
+    }
+}
+
+#[no_mangle]
+extern "C" fn roc_fx_draw_rectangle_pro(rect: &glue::RocRectangle, origin: &glue::RocVector2, rotation: f32, color: glue::RocColor) {
+    if let Err(msg) = platform_mode::update(PlatformEffect::DrawRectangle) {
+        display_fatal_error_message(msg, ExitErrCode::EffectNotPermitted);
+    }
+
+    unsafe {
+        raylib::DrawRectanglePro(rect.into(), origin.into(), rotation, color.into());
     }
 }
 
@@ -812,7 +823,7 @@ extern "C" fn roc_fx_end_texture(_boxed_render_texture: RocBox<()>) {
 }
 
 #[no_mangle]
-extern "C" fn roc_fx_end_shader_mode(_boxed_render_texture: RocBox<()>) {
+extern "C" fn roc_fx_end_shader_mode() {
     unsafe {
         raylib::EndShaderMode();
     }
@@ -1057,6 +1068,33 @@ extern "C" fn roc_fx_draw_texture_rec(
         raylib::DrawTextureRec(*texture, source.into(), position.into(), color.into());
     }
 }
+#[no_mangle]
+extern "C" fn roc_fx_draw_texture_pro(
+    boxed_texture: RocBox<()>,
+    source: &glue::RocRectangle,
+    dest: &glue::RocRectangle,
+    position: &glue::RocVector2,
+    rotation: f32,
+    color: glue::RocColor,
+) {
+    if let Err(msg) = platform_mode::update(PlatformEffect::DrawTextureRectangle) {
+        display_fatal_error_message(msg, ExitErrCode::EffectNotPermitted);
+    }
+
+    let texture: &mut raylib::Texture =
+        ThreadSafeRefcountedResourceHeap::box_to_resource(boxed_texture);
+
+    unsafe {
+        raylib::DrawTexturePro(
+            *texture,
+            source.into(),
+            dest.into(),
+            position.into(),
+            rotation,
+            color.into()
+        );
+    }
+}
 
 #[no_mangle]
 extern "C" fn roc_fx_draw_render_texture_rec(
@@ -1275,5 +1313,18 @@ extern "C" fn roc_fx_draw_triangle_fan(points: &RocList<glue::RocVector2>, color
             points.len() as i32,
             color.into(),
         );
+    }
+}
+
+#[no_mangle]
+extern "C" fn roc_fx_begin_blend_mode(mode: i32) {
+    unsafe {
+        raylib::BeginBlendMode(mode);
+    }
+}
+#[no_mangle]
+extern "C" fn roc_fx_end_blend_mode() {
+    unsafe {
+        raylib::EndBlendMode();
     }
 }

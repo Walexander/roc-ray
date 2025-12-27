@@ -13,6 +13,7 @@ module [
     NetworkMessage,
     Shader,
     UUID,
+    BlendMode,
     rgba,
     init_window!,
     exit!,
@@ -136,7 +137,14 @@ Color : [
     Fuchsia,
     Purple,
 ]
-
+BlendMode : [
+    Alpha,
+    Additive,
+    Multiplied,
+    AddColors,
+    SubtractColors,
+    AlphaPremultiply,
+]
 ## A static image loaded into GPU memory, typically from a file. Once loaded, it can be used
 ## multiple times for efficient rendering. Cannot be modified after creation - for dynamic
 ## textures that can be drawn to, see [RenderTexture] instead.
