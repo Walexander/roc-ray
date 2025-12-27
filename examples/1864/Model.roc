@@ -1,6 +1,7 @@
 module [ Army, Orders, YearOfDecision, initialize! ]
 import rr.RocRay exposing [ Camera, Vector2 ]
 import rr.Effect
+import rr.Shader
 import Unit exposing [Unit]
 import HexTile exposing [HexMap]
 import Hex exposing [ doubled, Doubled ]
@@ -56,6 +57,13 @@ YearOfDecision : {
         top_tiles: RocRay.Texture,
         units: RocRay.Texture,
     },
+    render_textures: {
+        fog: RocRay.RenderTexture
+    },
+    shaders: {
+        fog: Shader.RenderShader,
+        ring: Shader.RenderShader,
+    },
     # background: Sprite,
     # backgrounds: List Sprite,
     # screenState : ScreenState,
@@ -69,8 +77,8 @@ YearOfDecision : {
     ecs: Particle.ECS,
 }
 
-initialize! : Camera, _, _, _ => YearOfDecision
-initialize! =  |camera, textures, sounds, camera_settings|
+initialize! : Camera, _, _, _, _, _ => YearOfDecision
+initialize! =  |camera, textures, render_textures, shaders, sounds, camera_settings|
     seed = Effect.random_i32! 1 10000
 
     noise_fn = Noise.seeded_perlin2d seed
@@ -95,6 +103,7 @@ initialize! =  |camera, textures, sounds, camera_settings|
         player: { x: 0, y: 0 },
         trauma: 0f32,
         map,
+        shaders,
         playerVelocity: { x: 0, y: 0 },
         border: Hex.border,
         base_camera: camera_settings,
@@ -110,5 +119,6 @@ initialize! =  |camera, textures, sounds, camera_settings|
         glowing: None,
         launch_state: Stalemate,
         textures,
-        ecs: Particle.make rand |> Particle.spawn({position: { x: 0, y: 0 }, num_particles: 32 })
+        render_textures,
+        ecs: Particle.make rand |> Particle.spawn({position: { x: -100, y: -300 }, num_particles: 32 }),
     }

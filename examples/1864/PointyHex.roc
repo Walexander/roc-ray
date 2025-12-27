@@ -1,4 +1,4 @@
-module [cell_sorter, hex_distance, points, hex_to_pixel, lerp_path, vertical_spacing, horizontal_spacing, pixel_to_hex, neighbors, hex_width, hex_height]
+module [points_for, cell_sorter, hex_outline_centered, hex_size, hex_distance, points, hex_to_pixel, lerp_path, vertical_spacing, horizontal_spacing, pixel_to_hex, neighbors, hex_width, hex_height]
 
 import Hex  exposing [Doubled, Point, doubled]
 
@@ -17,17 +17,31 @@ double_width_neighbors = [
   doubled(1, 1)
 ]
 
-points = |center|
-  List.range { start: At 0, end: Before 7 }
-  |> List.map |c| corner center c
+hex_outline_centered = [
+      {x: 0,  y:  32}
+    , {x: 32, y:  16}
+    , {x: 32, y: -16}
+    , {x: 0,  y: -32}
+    , {x:-32, y: -16}
+    , {x:-32, y:  16}
+]
 
-corner = |center, c|
-  angle_deg = 60 * c - 30
-  angle = Num.pi / 180 * angle_deg
-  {
-    x: center.x + hex_size * (Num.cos angle),
-    y: center.y + hex_size * (Num.sin angle) - 8,
-  }
+points_for = |cell|
+  center = hex_to_pixel cell
+  List.map(hex_outline_centered, |vertex| Hex.addPoint vertex center)
+
+points = |center|
+  List.map(hex_outline_centered, |vertex| Hex.addPoint vertex center)
+  # List.range { start: At 0, end: Before 7 }
+  # |> List.map |c| corner center c
+
+# corner = |center, c|
+#   angle_deg = 60 * c - 30
+#   angle = Num.pi / 180 * angle_deg
+#   {
+#     x: center.x + hex_size * (Num.cos angle),
+#     y: center.y + hex_size * (Num.sin angle),
+#   }
 
 neighbors = |cell|
   List.map double_width_neighbors |n| Hex.add n cell

@@ -58,14 +58,6 @@ seeded_perlin2d = |seed|
   |xin, yin|
     perlin2d_ grad_ xin yin
 
-
-hash_ = |input|
-  x = input.x + input.seed |> Num.mul_wrap 374613993
-  x_ = Num.shift_left_by x 13
-  Num.bitwise_xor x  x_ |> Num.mul_wrap 15731 |> Num.add 789221
-
-
-
 perlin2d : F32, F32 -> F32
 
 perlin2d = |xin, yin|

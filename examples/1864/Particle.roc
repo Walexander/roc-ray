@@ -250,7 +250,6 @@ explode_system = |ecs|
 emitter_system : ECS -> ECS
 emitter_system = |ecs|
   List.walk ecs.emissions ecs |world, { position, lifetime, explosion }|
-    dbg "Creating particles that exist for ${Inspect.to_str lifetime} "
     spawn world { position, num_particles: explosion.num_particles, lifetime }
   |> |world| { world & emissions: [] }
 
