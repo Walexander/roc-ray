@@ -20,6 +20,7 @@ module [
     set_target_fps!,
     display_fps!,
     take_screenshot!,
+    gen_image_color!,
     log!,
     load_file_to_str!,
     send_to_peer!,
@@ -276,3 +277,8 @@ send_to_peer! = |message, peer_id|
 
 random_i32! : { min : I32, max : I32 } => I32
 random_i32! = |{ min, max }| Effect.random_i32!(min, max)
+
+
+gen_image_color! = |width, height, color|
+    Effect.gen_image_color! width height rgba(color)
+    |> Result.map_err LoadErr

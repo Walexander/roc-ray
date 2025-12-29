@@ -1259,7 +1259,7 @@ extern "C" fn roc_fx_load_shader(vertex_shader: &RocStr, fragment_shader: &RocSt
 
     match alloc_result {
             Ok(roc_box) => RocResult::ok(roc_box),
-            Err(_) => {
+            Err(err) => {
                 RocResult::err("Unable to load shader, out of memory in the shader heap. Consider using ROC_RAY_MAX_SHADER_HEAP_SIZE env var to increase the heap size.".into())
             }
         }
@@ -1326,5 +1326,55 @@ extern "C" fn roc_fx_begin_blend_mode(mode: i32) {
 extern "C" fn roc_fx_end_blend_mode() {
     unsafe {
         raylib::EndBlendMode();
+    }
+}
+
+#[no_mangle]
+extern "C" fn roc_fx_gen_image_color(width: i32, height: i32, color: glue::RocColor) -> RocResult<RocBox<()>, RocStr> {
+    let image = unsafe {
+        raylib::GenImageColor(width.into(), height.into(), color.into())
+    };
+
+    if image.height != height || image.width != width {
+        return RocResult::err(
+            "failed to generate image".into()
+        )
+    }
+
+    let heap = roc::image_heap();
+    let alloc_result = heap.alloc_for(image);
+
+    match alloc_result {
+        Ok(roc_box) => RocResult::ok(roc_box),
+        Err(err) =>
+            RocResult::err(
+                "Unble to generate image heap".into()
+        )
+    }
+}
+#[no_mangle]
+extern "C" fn roc_fx_load_texture_from_image(boxed_image: RocBox<()>) -> RocResult<RocBox<()>, RocStr> {
+    if let Err(msg) = platform_mode::update(PlatformEffect::LoadTexture) {
+        display_fatal_error_message(msg, ExitErrCode::EffectNotPermitted);
+    }
+    let image: &mut raylib::Image =
+        ThreadSafeRefcountedResourceHeap::box_to_resource(boxed_image);
+
+    let texture: raylib::Texture = unsafe { raylib::LoadTextureFromImage(*image) };
+    // Validate texture loading success
+    if texture.id == 0 || texture.width == 0 || texture.height == 0 {
+        return RocResult::err(
+            format!(
+                "Failed to load texture. Verify the image is valid.",
+            )
+            .as_str()
+            .into(),
+        );
+    }
+    let heap = roc::texture_heap();
+    let alloc_result = heap.alloc_for(texture);
+    match alloc_result {
+        Ok(roc_box) => RocResult::ok(roc_box),
+        Err(_) => RocResult::err("Unable to load texture, out of memory in the texture heap. Consider using ROC_RAY_MAX_TEXTURES_HEAP_SIZE env var to increase the heap size.".into()),
     }
 }

@@ -1,7 +1,7 @@
 ## A static image loaded into GPU memory, typically from a file. Once loaded, it can be used
 ## multiple times for efficient rendering. Cannot be modified after creation - for dynamic
 ## textures that can be drawn to, see [RenderTexture] instead.
-module [load!, get_format!, PixelFormat]
+module [load!, from_image!, get_format!, PixelFormat]
 
 import Effect
 import RocRay exposing [Texture]
@@ -15,6 +15,11 @@ load! = |filename|
     Effect.load_texture!(filename)
     |> Result.map_err(LoadErr)
 
+
+from_image! : Effect.Image => Result Texture [LoadErr Str]
+from_image! = |image|
+    Effect.load_texture_from_image! image
+    |> Result.map_err(LoadErr)
 
 PixelFormat : [ GrayScale, GrayAlpha, R5G6B5, R8G8B8, R8G8B8A8, UnknownFormat ]
 

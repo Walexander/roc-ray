@@ -3,6 +3,7 @@ hosted [
     RenderTexture,
     Sound,
     Music,
+    Image,
     LoadedMusic,
     Camera,
     RawUUID,
@@ -54,6 +55,7 @@ hosted [
     end_mode_2d!,
     log!,
     load_texture!,
+    load_texture_from_image!,
     draw_texture_rec!,
     draw_texture_pro!,
     load_sound!,
@@ -81,7 +83,8 @@ hosted [
     # update_texture!,
     texture_format!,
     begin_blend_mode!,
-    end_blend_mode!
+    end_blend_mode!,
+    gen_image_color!
 ]
 
 import InternalColor exposing [RocColor]
@@ -192,6 +195,7 @@ end_shader_mode! : {} => {}
 
 Texture := Box {}
 load_texture! : Str => Result Texture Str
+load_texture_from_image! : Image => Result Texture Str
 draw_texture_rec! : Texture, RocRectangle, RocVector2, RocColor => {}
 draw_texture_pro! : Texture, RocRectangle, RocRectangle, RocVector2, F32, RocColor => {}
 draw_render_texture_rec! : RenderTexture, RocRectangle, RocVector2, RocColor => {}
@@ -238,7 +242,8 @@ set_shader_value_vec2! : Shader, I32, RocVector2 => {}
 set_shader_value_matrix! : Shader, I32, RocMatrix => {}
 get_camera_matrix_2d! : Camera => RocMatrix
 
-
+Image := Box { width: I32, height: I32,  mipmaps: I32, format: I32, data: List U8 }
+gen_image_color! : I32, I32, RocColor => Result Image Str
 
 configure_web_rtc! : Str => {}
 
