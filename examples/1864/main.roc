@@ -45,7 +45,7 @@ screen = {
 camera_settings = {
     target: { x: 0.0, y: 0 },
     offset: {x: screen.width / 2, y: screen.height / 2 },
-    zoom: 1.0,
+    zoom: 1.125,
     rotation: 0
 }
 fog_scale = 1.00
@@ -75,9 +75,14 @@ init! = |{}|
     }
     shaders = {
         fog: Shader.new!("examples/1864/assets/shaders/default.vs", "examples/1864/assets/shaders/fog-blur.frag", ["texelSize", "radius"])?,
-        ring: Shader.new!("examples/1864/assets/shaders/debug.vs", "examples/1864/assets/shaders/ring-select.fs",
-            ["time", "center", "duration", "thickness", "color", "center"]
-        )?
+        # ring: Shader.new!("examples/1864/assets/shaders/debug.vs", "examples/1864/assets/shaders/ring-select.fs",
+        #     ["time", "center", "duration", "thickness", "color", "center"]
+        # )?,
+        ring: Shader.new!("examples/1864/assets/shaders/scale.vert",
+            "examples/1864/assets/shaders/noop.frag",
+            # ["time", "center", "duration", "thickness", "color", "center"]
+            ["time", "max", "center"]
+        )?,
     }
     baseState : YearOfDecision
     baseState = Model.initialize!(
@@ -99,6 +104,7 @@ render! = |model, pf|
     path_finder = HexTile.make_path_finder model.map isOccupied
 
     unit_from_cell = |cell| List.find_first model.units |u| u.cell == cell
+    Camera.update! model.camera model.base_camera
     mouse_world = RocRay.get_screen_to_world_2d! pf.mouse.position model.camera
     hover_cell = PointyHex.pixel_to_hex mouse_world
 
@@ -114,8 +120,14 @@ render! = |model, pf|
 
     rand = Random.step model.rand Random.bounded_u32(0, 1_000_000)
     player_move_ = GameActions.inputs_to_move(model, isOccupied, unit_from_cell, mouse_world, pf.keys, pf.mouse.buttons)
-    world: YearOfDecision
+    summary_unit = List.find_first(model.units, |unit| unit.id == model.selectedIndex)
+        |> Result.on_err |_| List.first model.units
+        |> |result|
+            when result is
+                Ok u -> u
+                Err _ -> crash "must have non empty unit list"
 
+    world: YearOfDecision
     world = { model& game_time: model.game_time + dt, rand: rand.state }
         |> Trauma.process_trauma player_move_
         |> LaunchStatus.update
@@ -133,30 +145,30 @@ render! = |model, pf|
         |> |world_| { world_ &
             glowing:
                 when player_move_ is
-
                     SelectUnit unit_index ->
                         List.find_first(model.units, |{id}| id == unit_index)
-                        |> Result.map_ok |unit| Running (unit.cell, Animation.make {
+                        |> Result.map_ok |unit| Following (unit, Animation.make {
                             start_time: pf.timestamp.last_render_end,
-                            frame_count: 4,
-                            fps: 8,
+                            duration: 2.5,
                         })
                         |> Result.with_default None
                     MoveUnit { to } -> Running (to, Animation.make {
                         start_time: pf.timestamp.last_render_end,
-                        frame_count: 8,
-                        fps: 8,
+                        duration: 1.5,
                     })
                     _ -> when world_.glowing is
                         Running (cell, anim) ->
-                            duration = pf.timestamp.last_render_end - anim.start_time
-                            if (duration) >= 2_400 then
+                            if (anim.finished) then
                                 None
                             else
                                 processed = Animation.process anim dt
                                 Running (cell, processed)
-                        None -> when player_move_ is
-                            _ -> world_.glowing
+                        Following (unit, anim) ->
+                            u_ = List.find_first(model.units, |{id}| id == unit.id)
+                                |> Result.with_default summary_unit
+                            if anim.finished then None
+                            else Following (u_, Animation.process anim dt)
+                        None -> None
 
         }
     visible_cells = model.units
@@ -178,7 +190,8 @@ render! = |model, pf|
             Trauma=${model.trauma |> to_fixed 3}
         """
 
-    Draw.draw! Black |{}|
+    bg_color = RGBA 64 64 64 255
+    Draw.draw! bg_color |{}|
         render_map! world visible_cells new_settings
         render_game! world  pf path_finder
         render_trauma_bar! world.trauma intensity
@@ -206,16 +219,16 @@ render_map! = |model, visible_cells, new_settings|
         zoom: fog_scale, })
 
     RenderTexture.set_render_texture_filter! model.render_textures.fog Bilinear
-    Draw.with_texture! model.render_textures.fog RocRay.fade(Black, 1) |{}|
+    Draw.with_texture! model.render_textures.fog RocRay.fade(Black, 0.5) |{}|
         Draw.with_mode_2d! model.camera  |{}|
             Draw.circle! {
                 center: { x: 0, y: 0 },
-                radius: 32,
+                radius: 64,
                 color: White,
             }
             List.drop_if model.units \u -> u.army == Confederates
             |> List.for_each! |unit|
-               Draw.circle! { center: unit.position, radius: 32, color: White }
+               Draw.circle! { center: unit.position, radius: 64, color: White }
 
             render_map_fn! model.map |pad, tile_type|
                 center = PointyHex.hex_to_pixel  pad.cell
@@ -231,9 +244,12 @@ render_map! = |model, visible_cells, new_settings|
                 tx_pos = HexTile.texture_position tile 65 89
                 tint = when tile_type is
                     LaunchPad|Normal -> White
-                    OutOfBounds -> White
+                    OutOfBounds -> Black
                 drawHex! tile.cell model.hexTexture tx_pos tint
     )
+    # render_fog! model
+
+render_fog! = |model|
     Draw.with_blend_mode! Multiplied |{}|
         Draw.render_texture_pro!({
             texture: model.render_textures.fog,
@@ -310,7 +326,7 @@ render_debug! = |model, mouse_pos, keys, debug_text|
         {}
 
 render_particles! = |ecs|
-    Dict.map ecs.positionable |id, { x, y }|
+    Dict.map ecs.positionable |id, Positionable { x, y }|
         graphic = Dict.get ecs.scalable id
             |> Result.with_default { radius: 0, color: White }
         {
@@ -325,6 +341,9 @@ render_particles! = |ecs|
 
 render_hex_scaled! = |cell, color|
     Draw.triangle_fan! PointyHex.points_for(cell) color
+
+render_hex_outline! = |center, color, thickness|
+    drawPath! PointyHex.points(center) color thickness Bool.true
 
 renderHexOutline! = \cell, color ->
     center = (PointyHex.hex_to_pixel cell)
@@ -363,8 +382,8 @@ render_game! = |model, pf, path_finder|
                 InControl Confederates -> Red
            renderHexOutline! model.hoverCell White
            drawPath! unitPath_ White 5 Bool.false
-           render_units! model
            render_glow! model summary_unit
+           render_units! model
            if Keys.down pf.keys KeyLeftControl then
                 cube_path = path_finder summary_unit.cell model.hoverCell
                 straightLine = cube_path |> List.map |point| PointyHex.hex_to_pixel point
@@ -421,38 +440,43 @@ render_launch_pads! = |model|
         List.for_each! pad |cell| draw_top_tile! model.textures.top_tiles cell tile_type
 
 render_glow! = |model, summary_unit|
-   max_radius : F32
-   max_radius = 28.0
-   (center, radius) = when model.glowing is
-       None ->
-           c = PointyHex.hex_to_pixel summary_unit.dest
-           (c, Num.to_f32 max_radius)
-       Running (cell, anim) ->
-           c = PointyHex.hex_to_pixel cell
-           (c, max_radius |> Num.to_f32 |> Num.div 8 |> Num.mul (Num.to_f32 anim.frame_index))
+   (center, pct, color, shape, max) = when model.glowing is
+        None -> (PointyHex.hex_to_pixel summary_unit.dest, 1.0, White, (Hex summary_unit.dest), 1.0) #PointyHex.hex_to_pixel (summary_unit.dest, 1.0)
+        Following ({position}, anim) -> (position, Animation.percent anim, Black, Circle 28, 2.0)
+        Running (cell, anim) -> (PointyHex.hex_to_pixel cell , Animation.percent anim, White, (Hex cell), 2.5)
 
-   Draw.with_mode_shader! model.shaders.ring.shader |{}|
-        _ = when model.glowing is
-            None -> {}
-            Running (_, anim)  ->
-                Shader.set_f32! model.shaders.ring "time" (anim.frame_index |> Num.to_f32)
-                    |> Shader.set_vec2! "center" center
-                    |> Shader.set_f32! "thickness" 0.28
-                    |> Shader.set_f32! "duration" (anim.frame_count|> Num.to_f32)
-                    |> |_|
-                        Draw.circle! { center, radius: 48, color: Clear }
-                        # Draw.rectangle! {
-                        #     rect: {
-                        #         x: center.x - 28.0,
-                        #         y: center.y - 28.0,
-                        #         width: 56,
-                        #         height: 56,
-                        #     },
-                        #     # origin: { x: 0, y: 0 },
-                        #     # rotation: 20,
-                        #     color: Clear,
-                        # }
-        {}
+    Draw.with_mode_shader! model.shaders.ring.shader |{}|
+        Shader.set_f32! model.shaders.ring "time" pct
+        |> Shader.set_vec2! "center" center
+        |> Shader.set_f32! "max" max
+        |> |_|
+            when shape is
+                Hex cell ->
+                    render_hex_outline! PointyHex.hex_to_pixel(cell) RocRay.fade(Black, 0.8) 3.0
+                    render_hex_scaled! cell RocRay.fade(color, 0.5)
+
+                Circle radius ->
+                    Draw.circle_gradient! {
+                            center,
+                            inner: RocRay.fade(White, 0.25),
+                            outer: RocRay.fade(White, 1.0),
+                            radius,
+                    }
+                    # Draw.circle_lines! {
+                    #         center,
+                    #         color: Black,
+                    #         radius: radius + 2,
+                    # }
+                    Draw.ring! {
+                        center,
+                        inner: radius,
+                        outer: radius + 3,
+                        start: 90,
+                        end: 360 + 90,
+                        segments: 24,
+                        color: RocRay.fade(Black, 0.8)
+                    }
+    {}
 
 #    List.range { start: At 0, end: Before 4 }
 #        |> List.for_each! |ii|
@@ -548,10 +572,13 @@ render_countdown! = |countdown, color|
                 Num.ceiling(Num.to_f32 c/10)|>Num.to_f32 |> Num.to_str
     text_dims = Effect.measure_text! text text_size 1 |> InternalVector.to_vector2
 
-    Draw.circle!{ radius: diameter, center, color: White }
+    Draw.circle!{ radius: diameter, center, color }
     Draw.circle_lines!{ radius: diameter - 2, center, color: Black }
+    Draw.circle_lines!{ radius: diameter - 1, center, color: Black }
+    Draw.circle_lines!{ radius: diameter + 1, center, color: Black }
+    Draw.circle_lines!{ radius: diameter + 2, center, color: Black }
     Draw.text!{
-        color,
+        color: White,
         pos: {
             x: center.x - text_dims.x / 2,
             y: center.y - text_dims.y / 2,

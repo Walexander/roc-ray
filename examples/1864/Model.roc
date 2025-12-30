@@ -50,7 +50,7 @@ YearOfDecision : {
     countdown: U32,
     launch_state: [InControl Army, Stalemate],
     animations: Dict Doubled Animation,
-    glowing: [Running (Doubled, Animation), None],
+    glowing: [Running (Doubled, Animation), Following(Unit, Animation), None],
 
     textures: {
         full_tiles: RocRay.Texture,
