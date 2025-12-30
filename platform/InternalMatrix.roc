@@ -1,4 +1,4 @@
-module [RocMatrix, Matrix, from_matrix, to_matrix]
+module [RocMatrix, Matrix, identity, from_list, from_matrix, to_matrix, from_tuple, to_list]
 Matrix : {
     m0: F32,
     m4: F32,
@@ -41,3 +41,39 @@ from_matrix = |matrix|
 
 to_matrix = |@RocMatrix(matrix)|
     matrix
+
+identity : Matrix
+identity = {
+    m0:1, m4: 0, m8: 0, m12:0,
+    m1:0, m5: 1, m9: 0, m13:0,
+    m2:0, m6: 0, m10:1, m14:0,
+    m3:0, m7: 0, m11:0, m15:1 }
+
+from_list : List F32 -> Matrix
+from_list = |list|
+    when list is
+    [ m0, m4, m8, m12, m1, m5, m9, m13, m2, m6, m10, m14, m3, m7, m11, m15 ] ->
+        { m0, m4, m8, m12, m1, m5, m9, m13, m2, m6, m10, m14, m3, m7, m11, m15 }
+    _ ->
+        identity
+
+from_tuple = |(m0, m4, m8, m12, m1, m5, m9, m13, m2, m6, m10, m14, m3, m7, m11, m15)|
+    { m0,
+        m4,
+        m8,
+        m12,
+        m1,
+        m5,
+        m9,
+        m13,
+        m2,
+        m6,
+        m10,
+        m14,
+        m3,
+        m7,
+        m11,
+        m15
+    }
+to_list = |{ m0, m4, m8, m12, m1, m5, m9, m13, m2, m6, m10, m14, m3, m7, m11, m15 }|
+   [ m0, m4, m8, m12, m1, m5, m9, m13, m2, m6, m10, m14, m3, m7, m11, m15 ]

@@ -3,6 +3,7 @@ module [
     KeyboardKey,
     Color,
     Rectangle,
+    Matrix4,
     Vector2,
     Camera,
     Texture,
@@ -27,6 +28,7 @@ module [
     get_screen_size!,
     get_screen_to_world_2d!,
     random_i32!,
+    measure_text!,
     fade,
 ]
 
@@ -37,6 +39,7 @@ import Time
 import InternalKeyboard
 import InternalColor
 import InternalVector
+import InternalMatrix
 
 ## A state record provided by platform on each frame.
 ## ```
@@ -104,6 +107,13 @@ Rectangle : { x : F32, y : F32, width : F32, height : F32 }
 ## ```
 Vector2 : { x : F32, y : F32 }
 
+
+## Reprsents a 4x4 Matrix
+## ```
+## { }
+Matrix4 : InternalMatrix.Matrix
+
+## ```
 ## Represents a color using a tag union.
 ## ```
 ## # a generic rgba color
@@ -282,3 +292,7 @@ random_i32! = |{ min, max }| Effect.random_i32!(min, max)
 gen_image_color! = |width, height, color|
     Effect.gen_image_color! width height rgba(color)
     |> Result.map_err LoadErr
+
+measure_text! = |{ text, size, spacing }|
+    Effect.measure_text! text size spacing
+    |> InternalVector.to_vector2
