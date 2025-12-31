@@ -4,19 +4,16 @@ import rr.RocRay exposing [Texture, Camera]
 import rr.RocRay
 import rr.Camera
 import rr.Draw
-import rr.RenderTexture
 import rr.Keys
+import rr.InternalMatrix
+import rr.Effect
 import rr.Shader exposing []
 import rr.Mouse
 
 import rr.Texture
 
-width = 512
-height = 512
-col_count = 65
-row_count = 65
-render_width = col_count
-render_height =  row_count
+width = 512 + 64
+height = 512 + 64
 
 Model : {
     camera : Camera,
@@ -25,9 +22,10 @@ Model : {
     texture : Texture,
     paused: Bool,
     marker_pos: RocRay.Vector2,
+    empty: RocRay.Texture,
     fog_shader: Shader.RenderShader,
+    fire_shader: Shader.RenderShader,
     scale_shader: Shader.RenderShader,
-    fog: RocRay.RenderTexture,
     animation_frames: U32,
 }
 
@@ -42,7 +40,7 @@ init! = |{}|
     fog_shader = Shader.new!(
         "examples/assets/vertex-shader.vs",
         "examples/assets/fragment-shader.fs",
-        ["mvp", "time", "frequency", "amplitude"]
+        ["time", "frequency", "amplitude", "u_model"]
     )?
 
     amplitude = 10.333
@@ -50,45 +48,57 @@ init! = |{}|
 
     texture = Texture.load!("examples/assets/plasma.png")?
 
-    fog_texture = RenderTexture.create!({ width: render_width, height: render_height })?
-
-    RenderTexture.set_render_texture_filter!(fog_texture, Bilinear)
 
     format = Texture.get_format! texture
     dbg "Texture format is ${Inspect.to_str format}"
 
     camera = Camera.create!(
         {
-            zoom: 2,
+            zoom: 1,
             offset: center,
             target: { x: 0, y: 0 },
             rotation: 0,
         },
     )?
+    image = RocRay.gen_image_color!(1, 1, White)?
+        # |> Result.on_err |e|
+        #     dbg "Got a fucking error? ${Inspect.to_str e}"
+        #     crash("failed to load image")
+    dbg "Loaded image is ${Inspect.to_str image}"
+    empty_texture = Texture.from_image!(image)?
 
     Ok(
         {
             marker_pos: { x: 0, y: 0 },
             fog_shader,
+            empty: empty_texture,
             scale_shader: Shader.new!("examples/assets/scale.vert", "examples/assets/fragment-noop.fs", ["time", "max", "center"])?,
             texture,
             camera,
             freq,
-            fog: fog_texture,
             amplitude,
             animation_frames: 0,
             paused: Bool.false,
+            fire_shader: Shader.new!("examples/1864/assets/shaders/default.vs", "examples/1864/assets/shaders/explosion.frag", ["u_time", "u_duration"])?,
         }
     )
 
+rotate = |radians|
+  c = Num.cos radians
+  s = Num.sin radians
+  {
+    RocRay.identity &
+    m0: c,
+    m1: s,
+    m4: -1 * s,
+    m5: c,
+  }
 lerp : F32, F32, F32 -> F32
 lerp = |from, to, t|
     from + (to - from) * t
 render! : Model, RocRay.PlatformState => Result Model []
 render! = |model, pf|
     game_time = (pf.timestamp.render_start - pf.timestamp.init_start) |> Num.to_f32 |> Num.div 1e3
-
-
     marker_pos =
         if Mouse.pressed(pf.mouse.buttons.left) then
             RocRay.get_screen_to_world_2d! pf.mouse.position model.camera
@@ -131,24 +141,35 @@ render! = |model, pf|
         )
         |> |a| if Bool.not(model.paused) then lerp a 0 (1/ 60) else a
         |> Num.max 0.01
+
     iteration_duration = (60 * 2.5) |> Num.floor
     duration_f = Num.to_f32 iteration_duration
-
     rounds = animation_frames |> Num.to_f32 |> Num.div duration_f
     t = Num.min rounds 1.0
+
     Draw.draw!(
-        Teal,
+        # RGBA 128 128 128 255,
+        # RGBA 92 92 92 0,
+        RGBA 0x64 0x95 0xed 0xff,
         |{}|
             Draw.with_mode_2d! model.camera |{}|
-                _ = Shader.set_f32!(model.fog_shader, "amplitude", model.amplitude)
-                    |> Shader.set_f32!("frequency", model.freq)
                 Draw.with_mode_shader!(
                     model.fog_shader.shader,
                     |{}|
-                        draw_center_texture! model.texture { x: -width / 2, y: height / -2 } (width) (height)
+                        mat4 = rotate (Num.pi / 4)
+                        _ = Shader.set_f32!(model.fog_shader, "amplitude", model.amplitude)
+                            |> Shader.set_f32!("frequency", model.freq)
+                            |> Shader.set_mat4!("u_model", mat4)
+                        Draw.texture_pro! {
+                            origin: { x: 0, y: 0 },
+                            dest: { x: -256, y: -256, width: 512, height: 512 },
+                            texture: model.texture,
+                            source: { x: 0, y: 0, width: 512, height: 512 },
+                            rotation: 0,
+                            tint: Teal,
+                        }
                     )
-                # iterations = pf.frame_count |> Num.to_f32 |> Num.div 60 * 5 |> Num.floor
-                # dbg "t = ${Inspect.to_str t}"
+
                 Draw.with_mode_shader! model.scale_shader.shader |{}|
                     Shader.set_f32! model.scale_shader "time" t
                     |> Shader.set_f32! "max" 3.0
@@ -161,8 +182,10 @@ render! = |model, pf|
                         start: 90,
                         end: 360 + 90,
                         segments: 6,
-                        color: RocRay.fade(Black, 0.8)
+                        color: RocRay.fade(Black, 1.0)
                     }
+                draw_explosion! model marker_pos animation_frames duration_f
+
             text =
                 """
                 [Up Dn] Frequency = ${Inspect.to_str freq}
@@ -170,10 +193,33 @@ render! = |model, pf|
                 [Enter]Paused = ${Inspect.to_str model.paused}
                 Center = ${Inspect.to_str marker_pos}
                 """
+
+            text_dims = RocRay.measure_text! { text, size: 16, spacing: 1 }
+            text_pos = { x: 20, y: 20 }
+            padding = 16
+            Draw.rectangle! {
+                rect: {
+                    x: text_pos.x - (padding /2),
+                    y: text_pos.y - (padding /2),
+                    width: text_dims.x + padding,
+                    height: text_dims.y + padding,
+                },
+                color: RocRay.fade(Black, 0.5)
+            }
+
+            # Draw.rectangle! {
+            #     rect: {
+            #         x: text_pos.x  - 4,
+            #         y: text_pos.y - 4,
+            #         width: text_dims.x + 8,
+            #         height: text_dims.y + 8,,
+            #     },
+            #     color: RocRay.fade(Black, 0.5)
+            # }
             Draw.text! {
                 size: 16,
                 text,
-                pos: { x: 20, y: 20 },
+                pos: text_pos,
                 color: White,
             }
 
@@ -184,11 +230,39 @@ render! = |model, pf|
             animation_frames
     })
 
-draw_center_texture! = |texture, pos, width_, height_|
-
-    Draw.texture_rec! {
-        pos,
-        texture: texture,
-        source: { x: 0, y: 0, width: width_, height: height_ },
-        tint: Teal,
-    }
+draw_explosion! = |model, marker_pos, animation_frames, duration_f|
+    Draw.with_blend_mode! Multiplied |{}|
+        Draw.with_mode_shader! model.fire_shader.shader |{}|
+            Shader.set_f32! model.fire_shader "u_duration" (duration_f)
+            |> Shader.set_f32! "u_time" (Num.to_f32(animation_frames))
+            |> \_ -> {}
+            Draw.texture_pro! {
+                texture: model.empty,
+                origin: { x: 0, y: 0 },
+                rotation: 30,
+                dest: {
+                    x: marker_pos.x,
+                    y: marker_pos.y,
+                    width: 80,
+                    height: 80,
+                },
+                source: {
+                    x: 0, y: 0, width: 1, height: 1,
+                },
+                tint: RocRay.fade(Black, 1.0)
+            }
+            Draw.texture_pro! {
+                texture: model.empty,
+                origin: { x: 0, y: 0 },
+                rotation: 0,
+                dest: {
+                    x: marker_pos.x - 12.5,
+                    y: marker_pos.y - 12.5,
+                    width: 15,
+                    height: 20,
+                },
+                source: {
+                    x: 0, y: 0, width: 1, height: 1,
+                },
+                tint: RocRay.fade(White, 1.0)
+            }

@@ -618,7 +618,7 @@ extern "C" fn roc_fx_set_draw_fps(show: bool, pos: &glue::RocVector2) {
 }
 
 #[no_mangle]
-extern "C" fn roc_fx_get_camera_matrix_2d(_boxed_camera: RocBox<()>) -> glue::Matrix {
+extern "C" fn roc_fx_get_camera_matrix_2d(_boxed_camera: RocBox<()>) -> glue::RocMatrix {
     let camera: &mut raylib::Camera2D =
         ThreadSafeRefcountedResourceHeap::box_to_resource(_boxed_camera);
 
@@ -774,16 +774,27 @@ extern "C" fn roc_fx_set_shader_value_vec2(boxed_shader: RocBox<()>, loc_index: 
         raylib::SetShaderValue(*shader, loc_index, ptr_, raylib::ShaderUniformDataType_SHADER_UNIFORM_VEC2.try_into().unwrap());
     }
 }
+
 #[allow(unused_variables)]
 #[no_mangle]
-extern "C" fn roc_fx_set_shader_value_matrix(boxed_shader: RocBox<()>, loc_index: i32, matrix: &glue::Matrix) {
+extern "C" fn roc_fx_set_shader_value_matrix(boxed_shader: RocBox<()>, loc_index: i32,
+     m0: f32,  m4: f32,  m8: f32,  m12: f32,
+     m1: f32,  m5: f32,  m9: f32,  m13: f32,
+     m2: f32,  m6: f32,  m10: f32,  m14: f32,
+     m3: f32,  m7: f32,  m11: f32,  m15: f32,
+) {
+    let mat4 = raylib::Matrix {
+            m0 : m0, m4 : m4, m8 : m8, m12 : m8,
+            m1 : m1, m5 : m5, m9 : m9, m13 : m13,
+            m2 : m2, m6 : m6, m10 : m10, m14 : m14,
+            m3 : m3, m7 : m7, m11 : m11, m15 : m15,
+        };
     return unsafe {
         let shader: &mut raylib::Shader =
             ThreadSafeRefcountedResourceHeap::box_to_resource(boxed_shader);
-        raylib::SetShaderValueMatrix(*shader, loc_index, matrix.into());
+        raylib::SetShaderValueMatrix(*shader, loc_index, mat4);
     }
 }
-
 #[no_mangle]
 extern "C" fn roc_fx_end_mode_2d(_boxed_camera: RocBox<()>) {
     if let Err(msg) = platform_mode::update(PlatformEffect::EndMode2D) {

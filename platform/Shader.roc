@@ -7,15 +7,17 @@ module [
     get_location!,
     set_value!,
     set_value_vec2!,
+    set_value_matrix!,
     new!,
     set_f32!,
     set_vec2!,
-    set_value_matrix!,
+    set_mat4!,
 ]
 
-import InternalMatrix  exposing [ Matrix ]
+import InternalMatrix exposing [ Matrix ]
 import InternalVector
 import Effect
+import RocRay
 
 RenderShaderLocation : [ Loaded ShaderLocation, Empty, Invalid Str ]
 
@@ -30,7 +32,8 @@ new! : Str, Str, List Str => Result RenderShader [LoadErr(Str)]
 new! = |vertex, fragment, uniforms|
     shader = load!(vertex, fragment)?
     locations = List.walk!(uniforms, Dict.empty({}), |a, u|
-        Dict.insert a u get_location!(shader, u)
+        location = get_location!(shader, u)
+        Dict.insert a u location
     )
     Ok { shader, locations }
 
@@ -44,11 +47,16 @@ load! = |vertex, fragment|
 get_location! : Shader, Str => RenderShaderLocation
 get_location! = |shader, identifier|
     Effect.get_shader_location! shader identifier
+    |> Result.try |loc| if loc < 0 then Err "Invalid location id (${Inspect.to_str loc}) received for ${identifier}" else Ok loc
     |> Result.map_ok |loc| Loaded @ShaderLocation({ loc })
     |> Result.map_err |str| Invalid str
-    |> |result| when result is
-        Ok payload -> payload
-        Err err -> err
+    |> |result|
+        when result is
+            Ok payload -> payload
+            Err err ->
+                RocRay.log! "Error finding location of \"${identifier}\" -- ${Inspect.to_str err}" LogAll
+                err
+
 
 
 set_f32! = |rs, key, value|
@@ -60,6 +68,12 @@ set_vec2! = |rs, key, value|
     location = Dict.get(rs.locations, key) |> Result.with_default Empty
     set_value_vec2! rs.shader location value
     rs
+
+set_mat4! = |rs, key, value|
+    location = Dict.get(rs.locations, key) |> Result.with_default Empty
+    set_value_matrix! rs.shader location value
+    rs
+
 set_value! : Shader, RenderShaderLocation, F32 => {}
 set_value! = |shader, location, value|
     when location is
@@ -72,10 +86,13 @@ set_value_vec2! = |shader, location, {x, y}|
         Loaded @ShaderLocation({ loc }) -> Effect.set_shader_value_vec2! shader loc InternalVector.from_xy(x, y)
         _ -> {}
 
-set_value_matrix! : Shader, RenderShaderLocation,  Matrix => {}
-set_value_matrix! = |shader, location,  matrix|
+set_value_matrix! : Shader, RenderShaderLocation, Matrix => {}
+set_value_matrix! = |shader, location,  { m0, m4, m8, m12, m1, m5, m9, m13, m2, m6, m10, m14, m3, m7, m11, m15 }|
     when location is
         Loaded @ShaderLocation({ loc }) ->
-            matrix_ = InternalMatrix.from_matrix(matrix)
-            Effect.set_shader_value_matrix! shader loc matrix_
+            Effect.set_shader_value_matrix!(shader, loc,
+                m0, m4, m8, m12,
+                m1, m5, m9, m13,
+                m2, m6, m10, m14,
+                m3, m7, m11, m15)
         _ -> {}

@@ -30,6 +30,7 @@ module [
     random_i32!,
     measure_text!,
     fade,
+    identity
 ]
 
 import Mouse
@@ -112,6 +113,8 @@ Vector2 : { x : F32, y : F32 }
 ## ```
 ## { }
 Matrix4 : InternalMatrix.Matrix
+
+identity = InternalMatrix.identity
 
 ## ```
 ## Represents a color using a tag union.

@@ -239,7 +239,7 @@ load_shader! : Str, Str => Result Shader Str
 get_shader_location! : Shader, Str => Result I32 Str
 set_shader_value! : Shader, I32, F32 => {}
 set_shader_value_vec2! : Shader, I32, RocVector2 => {}
-set_shader_value_matrix! : Shader, I32, RocMatrix => {}
+set_shader_value_matrix! : Shader, I32, F32, F32, F32, F32, F32, F32, F32, F32, F32, F32, F32, F32, F32, F32, F32, F32 => {}
 get_camera_matrix_2d! : Camera => RocMatrix
 
 Image := Box { width: I32, height: I32,  mipmaps: I32, format: I32, data: List U8 }

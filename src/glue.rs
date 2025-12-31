@@ -373,120 +373,34 @@ roc_refcounted_noop_impl!(ScreenSize);
 
 
 #[repr(C)]
-pub struct Matrix {
-    pub m0: f32,
-    pub m4: f32,
-    pub m8: f32,
-    pub m12: f32,
-    pub m1: f32,
-    pub m5: f32,
-    pub m9: f32,
-    pub m13: f32,
-    pub m2: f32,
-    pub m6: f32,
-    pub m10: f32,
-    pub m14: f32,
-    pub m3: f32,
-    pub m7: f32,
-    pub m11: f32,
-    pub m15: f32,
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
+pub struct RocMatrix {
+    pub m0: f32, pub m4: f32, pub m8: f32, pub m12: f32,
+    pub m1: f32, pub m5: f32, pub m9: f32, pub m13: f32,
+    pub m2: f32, pub m6: f32, pub m10: f32, pub m14: f32,
+    pub m3: f32, pub m7: f32, pub m11: f32, pub m15: f32,
 }
 
-
-impl From<&Matrix> for raylib::Matrix {
-    fn from(matrix: &Matrix) -> raylib::Matrix {
+impl From<&RocMatrix> for raylib::Matrix {
+    fn from(m: &RocMatrix) -> raylib::Matrix {
+        println!("raylib Matrix: {:?}", m);
         raylib::Matrix {
-            m0: matrix.m0,
-            m1: matrix.m1,
-            m2: matrix.m2,
-            m3: matrix.m3,
-            m4: matrix.m4,
-            m5: matrix.m5,
-            m6: matrix.m6,
-            m7: matrix.m7,
-            m8: matrix.m8,
-            m9: matrix.m9,
-            m10: matrix.m10,
-            m11: matrix.m11,
-            m12: matrix.m12,
-            m13: matrix.m13,
-            m14: matrix.m14,
-            m15: matrix.m15,
+            m0 : m.m0, m4 : m.m4, m8 : m.m8, m12 : m.m8,
+            m1 : m.m1, m5 : m.m5, m9 : m.m9, m13 : m.m13,
+            m2 : m.m2, m6 : m.m6, m10 : m.m10, m14 : m.m14,
+            m3 : m.m3, m7 : m.m7, m11 : m.m11, m15 : m.m15,
         }
     }
 }
 
-impl From<raylib::Matrix> for Matrix {
-    fn from(matrix: raylib::Matrix) -> Matrix {
-        Matrix {
-            m0: matrix.m0,
-            m1: matrix.m1,
-            m2: matrix.m2,
-            m3: matrix.m3,
-            m4: matrix.m4,
-            m5: matrix.m5,
-            m6: matrix.m6,
-            m7: matrix.m7,
-            m8: matrix.m8,
-            m9: matrix.m9,
-            m10: matrix.m10,
-            m11: matrix.m11,
-            m12: matrix.m12,
-            m13: matrix.m13,
-            m14: matrix.m14,
-            m15: matrix.m15,
+impl From<raylib::Matrix> for RocMatrix {
+    fn from(m: raylib::Matrix) -> RocMatrix {
+        RocMatrix {
+            m0 : m.m0, m4 : m.m4, m8 : m.m8, m12 : m.m8,
+            m1 : m.m1, m5 : m.m5, m9 : m.m9, m13 : m.m13,
+            m2 : m.m2, m6 : m.m6, m10 : m.m10, m14 : m.m14,
+            m3 : m.m3, m7 : m.m7, m11 : m.m11, m15 : m.m15,
         }
     }
 }
-roc_refcounted_noop_impl!(Matrix);
-
-
-// #[repr(C)]
-// pub struct Image {
-//     pub data: *mut c_void,
-//     pub width: i32,
-//     pub height: i32,
-//     pub mipmaps: i32,
-//     pub format: i32,
-
-// }
-
-
-// impl From<&Image> for raylib::Image {
-//     fn from(image: &Image) -> raylib::Image {
-//         raylib::Image {
-//             width: image.width,
-//             height: image.height,
-//             mipmaps: image.mipmaps,
-//             format: image.format
-//             data: _,
-
-//         }
-//     }
-// }
-
-// impl From<raylib::Matrix> for Matrix {
-//     fn from(matrix: raylib::Matrix) -> Matrix {
-//         Matrix {
-//             m0: matrix.m0,
-//             m1: matrix.m1,
-//             m2: matrix.m2,
-//             m3: matrix.m3,
-//             m4: matrix.m4,
-//             m5: matrix.m5,
-//             m6: matrix.m6,
-//             m7: matrix.m7,
-//             m8: matrix.m8,
-//             m9: matrix.m9,
-//             m10: matrix.m10,
-//             m11: matrix.m11,
-//             m12: matrix.m12,
-//             m13: matrix.m13,
-//             m14: matrix.m14,
-//             m15: matrix.m15,
-//         }
-//     }
-// }
-// roc_refcounted_noop_impl!(Matrix);
-
-
+roc_refcounted_noop_impl!(RocMatrix);
