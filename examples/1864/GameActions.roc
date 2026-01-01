@@ -5,6 +5,7 @@ import Hex
 import Unit
 import HexTile
 import PointyHex
+import Particle
 import Model exposing [ YearOfDecision ]
 
 PlayerMove : [ IncreaseTimer,
@@ -56,7 +57,12 @@ update! = |model, move, path_finder|
   when move is
     NoMove -> model
     SelectUnit unit_index -> { model & selectedIndex: unit_index }
-    AddTrauma -> {model & trauma: Hex.lerp model.trauma 1 0.5 }
+    AddTrauma -> {
+      model &
+      trauma: Hex.lerp model.trauma 1 0.5,
+      ecs: Particle.spawn(model.ecs, { position: PointyHex.hex_to_pixel model.hoverCell, num_particles: 0, max_lifetime: 180 })
+
+    }
     ToggleTerrain cell terrain ->
       map = HexTile.toggle_terrain model.map cell terrain
       dbg "Toggling like ${Inspect.to_str terrain}"

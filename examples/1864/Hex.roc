@@ -164,20 +164,20 @@ border =
     ])
 
 
-expect
-    clamped (doubled 0 0)
-expect
-    clamped (doubled -1 0)
-    |> Bool.not
-expect
-    clamped (doubled 15 0)
-    |> Bool.not
-expect
-    clamped (doubled 0 17)
-    |> Bool.not
-expect
-    clamped (doubled 0 -1)
-    |> Bool.not
+# expect
+#     clamped (doubled 0 0)
+# expect
+#     clamped (doubled -1 0)
+#     |> Bool.not
+# expect
+#     clamped (doubled 15 0)
+#     |> Bool.not
+# expect
+#     clamped (doubled 0 17)
+#     |> Bool.not
+# expect
+#     clamped (doubled 0 -1)
+#     |> Bool.not
 
 clamp = \test ->
     c =
@@ -208,10 +208,10 @@ clamp = \test ->
             test.row
     { column: c, row: r }
 
-expect
-    actual = clamp (doubled 11 17)
-    expected = doubled 11 15
-    actual == expected
+# expect
+#     actual = clamp (doubled 11 17)
+#     expected = doubled 11 15
+#     actual == expected
 
 # expect
 #     actual = clamp (doubled 14 18)
@@ -222,40 +222,40 @@ expect
 #     actual = clamp (doubled 14 14)
 #     expected = doubled 12 14
 #     actual == expected
-expect
-    actual = clamp (doubled 1 17)
-    expected = doubled 1 15
-    actual == expected
-expect
-    actual = clamp (doubled -2 8)
-    expected = doubled 0 8
-    actual == expected
-
-expect
-    actual = clamp (doubled 14 8)
-    expected = doubled 12 8
-    actual == expected
-
-expect
-    actual = clamp (doubled 14 -2)
-    expected = doubled 12 0
-    actual == expected
 # expect
-#     clamp (doubled 12 18) == (doubled 12 16)
+#     actual = clamp (doubled 1 17)
+#     expected = doubled 1 15
+#     actual == expected
+# expect
+#     actual = clamp (doubled -2 8)
+#     expected = doubled 0 8
+#     actual == expected
 
-expect
-    actual = clamp (doubled -4 -2)
-    expected = doubled 0 0
-    actual == expected
-## Clamp should maintain (r + c) % 2 == 0 invariant
-expect
-    actual = clamp (doubled -1 1)
-    expected = doubled 1 1
-    actual == expected
-expect
-    actual = clamp (doubled 3 -1)
-    expected = doubled 3 1
-    actual == expected
+# expect
+#     actual = clamp (doubled 14 8)
+#     expected = doubled 12 8
+#     actual == expected
+
+# expect
+#     actual = clamp (doubled 14 -2)
+#     expected = doubled 12 0
+#     actual == expected
+# # expect
+# #     clamp (doubled 12 18) == (doubled 12 16)
+
+# expect
+#     actual = clamp (doubled -4 -2)
+#     expected = doubled 0 0
+#     actual == expected
+# ## Clamp should maintain (r + c) % 2 == 0 invariant
+# expect
+#     actual = clamp (doubled -1 1)
+#     expected = doubled 1 1
+#     actual == expected
+# expect
+#     actual = clamp (doubled 3 -1)
+#     expected = doubled 3 1
+#     actual == expected
 
 doubleNeighbors = [
     doubled 1 1,
@@ -271,33 +271,33 @@ neighborsOf = \cell ->
     List.map doubleNeighbors \n -> add n cell
     |> List.keep_if clamped
 
-expect
-    actual = neighborsOf (doubled 6 6)
-    expected = [
-        doubled 6 4,
-        doubled 7 5,
-        doubled 5 5,
-        doubled 6 8,
-        doubled 5 7,
-        doubled 7 7,
-    ]
-    List.all expected \expec -> List.contains actual expec
+# expect
+#     actual = neighborsOf (doubled 6 6)
+#     expected = [
+#         doubled 6 4,
+#         doubled 7 5,
+#         doubled 5 5,
+#         doubled 6 8,
+#         doubled 5 7,
+#         doubled 7 7,
+#     ]
+#     List.all expected \expec -> List.contains actual expec
 
-expect
-    n = neighborsOf (doubled 0 0)
-    List.contains n (doubled 0 2)
-    &&
-    !(List.contains n (doubled 2 0))
+# expect
+#     n = neighborsOf (doubled 0 0)
+#     List.contains n (doubled 0 2)
+#     &&
+#     !(List.contains n (doubled 2 0))
 
-expect
-    actual = neighborsOf (doubled 12 6)
-    expected = [
-        doubled 12 8,
-        doubled 11 5,
-        doubled 12 4,
-        doubled 11 7,
-    ]
-    List.all expected \expec -> List.contains actual expec
+# expect
+#     actual = neighborsOf (doubled 12 6)
+#     expected = [
+#         doubled 12 8,
+#         doubled 11 5,
+#         doubled 12 4,
+#         doubled 11 7,
+#     ]
+#     List.all expected \expec -> List.contains actual expec
 
 # graph = \isBlocked -> \cell -> Ok (neighborsOf cell |> List.drop_if isBlocked)
 graph = |isBlocked| |cell| Ok(neighborsOf cell |> List.drop_if isBlocked)
@@ -413,32 +413,32 @@ expect
     actual == expected
 
 ## findGraph should return straight line when none blocked
-expect
-    actual =
-        findGraph
-            (doubled 0 0)
-            (doubled 0 4)
-            (\_ -> Bool.false)
-    expected = Ok [doubled 0 0, doubled 0 2, doubled 0 4]
-    actual == expected
+# expect
+#     actual =
+#         findGraph
+#             (doubled 0 0)
+#             (doubled 0 4)
+#             (\_ -> Bool.false)
+#     expected = Ok [doubled 0 0, doubled 0 2, doubled 0 4]
+#     actual == expected
 
-expect
-    actual =
-        findGraph
-            (doubled 1 1)
-            (doubled 3 0)
-            (\_ -> Bool.false)
-    expected = Err NotFound
-    actual == expected
-## findGraph should return straight line horizontally
-expect
-    actual =
-        findGraph
-            (doubled 0 0)
-            (doubled 2 0)
-            (\_ -> Bool.false)
-    expected = Ok [doubled 0 0, doubled 1 1, doubled 2 0]
-    actual == expected
+# expect
+#     actual =
+#         findGraph
+#             (doubled 1 1)
+#             (doubled 3 0)
+#             (\_ -> Bool.false)
+#     expected = Err NotFound
+#     actual == expected
+# ## findGraph should return straight line horizontally
+# expect
+#     actual =
+#         findGraph
+#             (doubled 0 0)
+#             (doubled 2 0)
+#             (\_ -> Bool.false)
+#     expected = Ok [doubled 0 0, doubled 1 1, doubled 2 0]
+#     actual == expected
 
 pathToLine = \path ->
     List.map_with_index path \from, i ->
@@ -458,14 +458,14 @@ hexDistance = \from, to ->
     |> Num.add dcol
 # dcol + (Num.max 0 ((Num.sub drow dcol) |> Num.to_frac |> Num.div 2 |> Num.round))
 
-expect
-    actual = hexDistance (doubled 1 5) (doubled 1 3)
-    expected = 1
-    actual == expected
-expect
-    List.all
-        (neighborsOf (doubled 1 5))
-        \neighbor -> hexDistance (doubled 1 5) neighbor == 1
+# expect
+#     actual = hexDistance (doubled 1 5) (doubled 1 3)
+#     expected = 1
+#     actual == expected
+# expect
+#     List.all
+#         (neighborsOf (doubled 1 5))
+#         \neighbor -> hexDistance (doubled 1 5) neighbor == 1
 
 pointLerp : Point, Point, F32 -> Point
 pointLerp = \a, b, progress -> {

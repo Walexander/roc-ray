@@ -7,7 +7,7 @@ uniform float u_time;      // seconds since explosion start
 // uniform vec3  u_color;     // base explosion color (orange/yellow)
 uniform float u_duration;  // total lifetime (e.g. 1.0)
 
-const vec3 u_color = vec3(1.0, 0.25, 0.1);
+const vec3 u_color = vec3(0.6, 0.5, 0.1);
 
 float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -115,7 +115,7 @@ void main_particle() {
     gl_FragColor = vec4(color, particle);
 }
 
-void main() {
+void main_explode() {
     vec2 uv = fragTexCoord * 2.0 - 1.0;
     float dist = length(uv);
     float angle = atan(uv.y, uv.x);
@@ -123,7 +123,7 @@ void main() {
     float t = clamp(u_time / u_duration, 0.0, 1.0);
 
     // === PARTICLES ===
-    const float PARTICLE_COUNT = 28.0;
+    const float PARTICLE_COUNT = 128.0;
 
     float id = floor((angle + 3.14159) / (2.0 * 3.14159) * PARTICLE_COUNT);
     float seed = id / PARTICLE_COUNT;
@@ -131,7 +131,7 @@ void main() {
     // Per-particle randomness
     float speed   = mix(1.2, 2.0, hash(vec2(seed, 1.1)));
     float gravity = mix(1.5, 2.5, hash(vec2(seed, 2.2)));
-    float size    = mix(0.04, 0.08, hash(vec2(seed, 3.3)));
+    float size    = mix(0.14, 0.18, hash(vec2(seed, 3.3)));
 
     // === GRAVITY ARC ===
     // r(t) = v*t - g*t²
@@ -161,4 +161,79 @@ void main() {
         smoke * particle * t * t;
 
     gl_FragColor = vec4(color, particle);
+}
+
+void main() {
+    vec2 uv = fragTexCoord * 2.0 - 1.0;
+    float dist = length(uv);
+    float angle = atan(uv.y, uv.x);
+
+    float t = clamp(u_time / u_duration, 0.0, 1.0);
+    float radius = t * 1.2;
+
+
+    // === PARTICLES ===
+    const float PARTICLE_COUNT = 128.0;
+
+    float id = floor((angle + 3.14159) / (2.0 * 3.14159) * PARTICLE_COUNT);
+    float seed = id / PARTICLE_COUNT;
+
+    float speed   = mix(1.4, 2.4, hash(vec2(seed, 1.1)));
+    float gravity = mix(1.6, 2.8, hash(vec2(seed, 2.2)));
+    float size    = mix(0.12, 0.16, hash(vec2(seed, 3.3)));
+
+    // === GRAVITY ARC ===
+    float r = speed * t - gravity * t * t;
+    r = max(r, 0.0);
+
+    float wobble = sin(t * 12.0 + seed * 25.0) * 0.035;
+    float d = abs(dist - (r + wobble));
+
+    float particle = smoothstep(size, 0.0, d);
+    particle *= smoothstep(1.0, 0.55, t);
+
+    // === SHAPES ===
+    float coreRadius = radius * 0.75;   // was smaller before (~0.25-ish)
+
+    // float core = smoothstep(0.06, 0.0, dist); // VERY small hot core
+    // core *= smoothstep(0.25, 0.0, t);         // dies quickly
+    // float core =
+    // smoothstep(coreRadius, 0.0, dist) *
+    // smoothstep(0.0, 0.08, t) *
+    // smoothstep(0.25, 0.12, t);
+    float coreIn  = smoothstep(0.0, 0.12, t); // *smoothstep(0.0, 0.06, t);    // fast ignition
+    float coreOut = 1.0 - smoothstep(0.12, 0.25, t); // smoothstep(0.25, 0.125, t);   // slower fade
+
+    float core =
+        smoothstep(coreRadius, 0.0, dist) *
+        coreIn *
+        coreOut;
+
+
+// Very short-lived hot flash (barely yellow)
+
+// Tight hot core
+vec3 hotCore = vec3(2.5, 2.0, 1.2);
+
+// Hot orange mid
+vec3 orange = vec3(2.6, 1.1, 0.25);
+
+// Deep red outer
+vec3 red = vec3(1.8, 0.25, 0.06);
+
+// Scorched smoke
+vec3 smoke = vec3(0.12, 0.04, 0.02);
+
+// Radial blend factor (0 = center, 1 = edge)
+float radial = smoothstep(0.0, radius, dist);
+
+// Time gating for hot flash
+float hotPhase = smoothstep(0.0, 0.1, t) * smoothstep(0.3, 0.1, t);
+
+// Final color
+vec3 color =
+    hotCore * core * hotPhase +
+    mix(orange, red, radial) * particle * (1.0 - t * 0.4) +
+    smoke * particle * t * t;
+    gl_FragColor = vec4(color, particle + core);
 }

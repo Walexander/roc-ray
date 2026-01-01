@@ -56,6 +56,7 @@ YearOfDecision : {
         full_tiles: RocRay.Texture,
         top_tiles: RocRay.Texture,
         units: RocRay.Texture,
+        empty: RocRay.Texture,
     },
     render_textures: {
         fog: RocRay.RenderTexture
@@ -63,6 +64,7 @@ YearOfDecision : {
     shaders: {
         fog: Shader.RenderShader,
         ring: Shader.RenderShader,
+        particle: Shader.RenderShader,
     },
     # background: Sprite,
     # backgrounds: List Sprite,
@@ -120,5 +122,5 @@ initialize! =  |camera, textures, render_textures, shaders, sounds, camera_setti
         launch_state: Stalemate,
         textures,
         render_textures,
-        ecs: Particle.make rand |> Particle.spawn({position: { x: -100, y: -300 }, num_particles: 32 }),
+        ecs: Particle.make rand |> Particle.spawn({position: { x: 16, y: -64 }, num_particles: 16 }),
     }

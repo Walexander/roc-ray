@@ -2,6 +2,7 @@ app [Model, init!, render!] {
     rr: platform "../../platform/main.roc",
     rand: "https://github.com/lukewilliamboswell/roc-random/releases/download/0.5.0/yDUoWipuyNeJ-euaij4w_ozQCWtxCsywj68H0PlJAdE.tar.br",
 }
+import Matrix4
 # import Utils exposing [frameCountToSeconds]
 import Unit exposing [Unit]
 import GameActions
@@ -48,7 +49,7 @@ camera_settings = {
     zoom: 1.125,
     rotation: 0
 }
-fog_scale = 1.00
+fog_scale = 0.25
 init! : {} => Result YearOfDecision _
 init! = |{}|
     RocRay.set_target_fps! 60
@@ -74,20 +75,34 @@ init! = |{}|
         })?
     }
     shaders = {
-        fog: Shader.new!("examples/1864/assets/shaders/default.vs", "examples/1864/assets/shaders/fog-blur.frag", ["texelSize", "radius"])?,
+        fog: Shader.new!("examples/1864/assets/shaders/default.vs",
+            "examples/1864/assets/shaders/fog-blur.frag",
+            ["texelSize", "blurStrength"])?,
         # ring: Shader.new!("examples/1864/assets/shaders/debug.vs", "examples/1864/assets/shaders/ring-select.fs",
         #     ["time", "center", "duration", "thickness", "color", "center"]
         # )?,
+        particle: Shader.new!(
+            "examples/1864/assets/shaders/default.vs",
+            "examples/1864/assets/shaders/explosion.frag",
+            [ "u_time", "u_duration",]
+        )?,
         ring: Shader.new!("examples/1864/assets/shaders/scale.vert",
             "examples/1864/assets/shaders/noop.frag",
-            # ["time", "center", "duration", "thickness", "color", "center"]
             ["time", "max", "center"]
         )?,
     }
+    RenderTexture.set_render_texture_filter! render_textures.fog Bilinear
+    image = RocRay.gen_image_color!(1, 1, White)?
+    textures = {
+            empty: Texture.from_image!(image)?,
+            units,
+            top_tiles,
+            full_tiles: hexTexture
+        }
     baseState : YearOfDecision
     baseState = Model.initialize!(
         camera,
-        { units, top_tiles, full_tiles: hexTexture },
+        textures,
         render_textures,
         shaders,
         { power_up, power_down, ok, horse, wagon },
@@ -137,7 +152,7 @@ render! = |model, pf|
         |> GameActions.update!(player_move_, path_finder)
         |> Health.update
         |> |world_|
-            if world_.game_time >= 2_500 then
+            if world_.game_time >= 3_500 then
                 AI.update world_ path_finder isOccupied
             else
                 world_
@@ -191,8 +206,9 @@ render! = |model, pf|
         """
 
     bg_color = RGBA 64 64 64 255
+    debug_mode = Keys.down pf.keys KeyLeftShift
     Draw.draw! bg_color |{}|
-        render_map! world visible_cells new_settings
+        render_map! world visible_cells new_settings debug_mode
         render_game! world  pf path_finder
         render_trauma_bar! world.trauma intensity
         render_debug! world  pf.mouse.position pf.keys debugText
@@ -208,7 +224,7 @@ render! = |model, pf|
 
     Ok world
 
-render_map! = |model, visible_cells, new_settings|
+render_map! = |model, visible_cells, new_settings, show_fog|
 
     Camera.update!(model.camera, {
         new_settings &
@@ -216,16 +232,11 @@ render_map! = |model, visible_cells, new_settings|
             x: screen.width / 2 * fog_scale,
             y: screen.height / 2 * fog_scale,
         },
-        zoom: fog_scale, })
+        zoom: fog_scale * model.base_camera.zoom, })
 
-    RenderTexture.set_render_texture_filter! model.render_textures.fog Bilinear
+
     Draw.with_texture! model.render_textures.fog RocRay.fade(Black, 0.5) |{}|
         Draw.with_mode_2d! model.camera  |{}|
-            Draw.circle! {
-                center: { x: 0, y: 0 },
-                radius: 64,
-                color: White,
-            }
             List.drop_if model.units \u -> u.army == Confederates
             |> List.for_each! |unit|
                Draw.circle! { center: unit.position, radius: 64, color: White }
@@ -247,49 +258,35 @@ render_map! = |model, visible_cells, new_settings|
                     OutOfBounds -> Black
                 drawHex! tile.cell model.hexTexture tx_pos tint
     )
-    # render_fog! model
+    ## For some reason, rendering this with the camera is **slow**
+    if show_fog then render_fog! model else {}
 
+## TODO: scissor the top of this so it doesn't sit above our FPS indicator
+fog_texel_size = { x: 1/( fog_scale * Num.to_f32(screen.width)), y: 1/(fog_scale * Num.to_f32(screen.height)) }
 render_fog! = |model|
     Draw.with_blend_mode! Multiplied |{}|
-        Draw.render_texture_pro!({
-            texture: model.render_textures.fog,
-            dest: {
-                width: screen.width,
-                height: screen.height,
-                x: 0, #screen.width / -2,
-                y: 0,
-            },
-            origin: { x: 0, y: 0 },
-            source:  {
-                width: screen.width * fog_scale,
-                height: screen.height * fog_scale * -1,
-                x: 0,
-                y: 0,
-            },
-            rotation: 0,
-            tint: White })
-    Draw.with_mode_shader! model.shaders.fog.shader |{}|
-        texelSize = { x: 1/Num.to_f32(screen.width), y: 1/Num.to_f32(screen.height) }
-        Shader.set_vec2! model.shaders.fog "texelSize" texelSize
-            |> Shader.set_f32! "blur" 1.5
-            |> \_ -> {}
-        Draw.render_texture_pro!({
-            texture: model.render_textures.fog,
-            dest: {
-                width: screen.width,
-                height: screen.height,
-                x: 0,
-                y: 0,
-            },
-            origin: { x: 0, y: 0 },
-            source:  {
-                width: screen.width * fog_scale,
-                height: screen.height * fog_scale * -1,
-                x: 0,
-                y: 0,
-            },
-            rotation: 0,
-            tint: Black })
+        Draw.with_mode_shader! model.shaders.fog.shader |{}|
+            Shader.set_vec2! model.shaders.fog "texelSize" fog_texel_size
+                |> Shader.set_f32! "blurStrength" 1.5
+                |> \_ -> {}
+            Draw.render_texture_pro!({
+                texture: model.render_textures.fog,
+                source:  {
+                    width: screen.width * fog_scale,
+                    height: screen.height * fog_scale * -1,
+                    x: 0,
+                    y: 0,
+                },
+                dest: {
+                    width: screen.width,
+                    height: screen.height,
+                    x: 0,
+                    y: 0,
+                },
+                origin: { x: 0, y: 0 },
+                rotation: 0,
+                tint: White })
+
 render_debug! = |model, mouse_pos, keys, debug_text|
     unit_finder = |id| |u| u.id == id
     Draw.circle! {
@@ -314,8 +311,9 @@ render_debug! = |model, mouse_pos, keys, debug_text|
     summary_text_dims = Effect.measure_text! summary_text 24 1 |> InternalVector.to_vector2
     Draw.text! { pos: { x: 128+10, y: screen.height - (Num.to_f32 summary_text_dims.y + 24) }, text: summary_text, size: 24, color: summary_text_color }
     debug_text_dims = Effect.measure_text! debug_text 16 1 |> InternalVector.to_vector2
+    debug_mode = Keys.down keys KeyLeftShift
 
-    if Keys.down keys KeyLeftShift then
+    if debug_mode then
         debug_pos = {
             x: screen.width - (Num.to_f32 debug_text_dims.x) - 48,
             y: screen.height - (Num.to_f32 debug_text_dims.y) - 24
@@ -324,19 +322,88 @@ render_debug! = |model, mouse_pos, keys, debug_text|
             pos: debug_pos, text: debug_text, size: 16, color: White }
     else
         {}
+render_particle_debug! = |{x, y, scale, dead_frame, lifetime}|
+    debug_text =
+            """
+            x: ${x |> Num.round |> Num.to_f32 |> Inspect.to_str}
+            y: ${y |>  Num.round |> Num.to_f32 |> Inspect.to_str}
+            s: ${scale |> Num.round |> Num.to_f32 |> Inspect.to_str}
+            dead:  ${dead_frame |> Inspect.to_str}
+            """
+    dims = RocRay.measure_text! { size: 16, text: debug_text, spacing: 4 }
+    t = Num.to_f32 dead_frame |> Num.div (Num.to_f32 lifetime)
+    rect = {
+        x: x,
+        y: y - dims.y * 2,
+        width: dims.x,
+        height: dims.y + 16
+    }
+    Draw.rectangle! {
+        rect,
+        color: RGBA 128 128 128 255
+    }
+    Draw.text! {
+        text: debug_text,
+        size: 16,
+        pos: { x: rect.x + 8, y: rect.y + 8},
+        color: White,
+    }
+    Draw.line_ex! {
+        end: { x, y },
+        start: { y: rect.height + rect.y, x: rect.x + dims.x / 2 },
+        thickness: 4,
+        color: Green
+    }
+    Draw.circle! { center: { x, y }, radius: 4, color: RocRay.fade(Red, 0.6) }
 
-render_particles! = |ecs|
-    Dict.map ecs.positionable |id, Positionable { x, y }|
-        graphic = Dict.get ecs.scalable id
-            |> Result.with_default { radius: 0, color: White }
-        {
-            x, y,
-            radius: graphic.radius,
-            color: graphic.color
-        }
-    |> Dict.values
-    |> List.for_each! |{x, y, radius, color}|
-        Draw.circle! {center: { x, y }, radius: radius * 10, color }
+render_particles! = |ecs, shader, texture, debug|
+    Draw.with_blend_mode! Alpha |{}|
+            Particle.get_by_component ecs [Position, Killable, Graphics]
+            |> Dict.values
+            |> List.for_each! |c| when c is
+                [
+                    Position {x, y},
+                    Killable { dead_frame, lifetime },
+                    Graphics { radius, rotation }
+                ] ->
+                    # Matrix4.value xform.transform
+                    scale = Num.max(24, 10 * radius) |> Num.min 128
+                    if debug then
+                        render_particle_debug! { x, y, scale, lifetime, dead_frame }
+                    else {}
+                    Draw.with_mode_shader! shader.shader |{}|
+                        Shader.set_f32! shader "u_duration" Num.to_f32(lifetime)
+                            |> Shader.set_f32! "u_time" Num.to_f32(lifetime - dead_frame)
+                            |> \_ -> {}
+
+                        Draw.texture_pro! {
+                            texture,
+                            # origin: { x: 0.5, y: 0.5 },
+                            origin: { x: 0, y: 0 },
+                            rotation,
+                            dest: {
+                                width: scale, height: scale,
+                                x: x - scale / 2,
+                                y: y - scale / 2,
+                            },
+                            source: {
+                                x: 0, y: 0, width: 1, height: 1,
+                            },
+                            tint: RocRay.fade(Black, 1.0)
+                        }
+                _ -> {}
+    # Dict.map ecs.positionable |id, { x, y }|
+    #     graphic = Dict.get ecs.scalable id
+    #         |> Result.with_default { radius: 0, color: White, rotation: 0 }
+    #     {
+    #         x, y,
+    #         rotation: 0,
+    #         radius: graphic.radius,
+    #         color: graphic.color
+    #     }
+    # |> Dict.values
+    # |> List.for_each! |{x, y, radius, color}|
+    #     Draw.circle! {center: { x, y }, radius: radius * 10, color }
 
 
 render_hex_scaled! = |cell, color|
@@ -367,6 +434,8 @@ render_game! = |model, pf, path_finder|
     # cubePath = path_finder(PointyHex.pixel_to_hex(summary_unit.position), model.hoverCell)
 
 
+    planning_mode = Keys.down pf.keys KeyLeftControl
+    debug_mode = Keys.down pf.keys KeyLeftShift
     unitPath_ =
         summary_unit.lastPath
         |> List.map PointyHex.hex_to_pixel
@@ -383,8 +452,9 @@ render_game! = |model, pf, path_finder|
            renderHexOutline! model.hoverCell White
            drawPath! unitPath_ White 5 Bool.false
            render_glow! model summary_unit
-           render_units! model
-           if Keys.down pf.keys KeyLeftControl then
+           render_units! model summary_unit
+
+           if planning_mode then
                 cube_path = path_finder summary_unit.cell model.hoverCell
                 straightLine = cube_path |> List.map |point| PointyHex.hex_to_pixel point
                 drawPath! straightLine RGBA(200, 200, 200, 255) 5 Bool.false
@@ -392,7 +462,7 @@ render_game! = |model, pf, path_finder|
                 {}
 
            render_countdown!(model.countdown, countdown_color)
-           render_particles! model.ecs
+           render_particles! model.ecs model.shaders.particle model.textures.empty debug_mode
     )
                     # )
     {}
@@ -496,14 +566,14 @@ render_glow! = |model, summary_unit|
 #                color: Black,
 #                radius: max_radius - i
 #            }
-render_units! : Model => {}
-render_units! = |model|
+render_units! : Model, _ => {}
+render_units! = |model, selected|
    model.units
     |> List.drop_if |u|
         when u.health is
             Living _ -> Bool.false
             Dead _ -> Bool.true
-    |> List.for_each!(|unit| drawUnit!(unit, model.textures.units))
+    |> List.for_each!(|unit| drawUnit!(unit, model.textures.units, selected.id == unit.id))
 
 render_trauma_bar! = |trauma, intensity|
     gauge_size = 128
@@ -624,9 +694,9 @@ draw_top_tile! = |texture, cell, type|
         Grey  -> { x: 55 * 0, y: 2 * 57, height: 57, width: 55 }
         Red  -> { x: 55 * 1, y: 3 * 57, height: 57, width: 55 }
     tint = when type is
-        Blue -> Blue
+        Blue -> RocRay.fade(Blue, 0.95)
         Grey -> Gray
-        Red -> Red
+        Red -> RocRay.fade(Red, 0.95)
 
     Draw.texture_rec! {
         texture,
@@ -668,8 +738,8 @@ drawHex! = |cell, texture, pos, tint|
             height: PointyHex.vertical_spacing * 2,
         },
     }
-drawUnit! : Unit, RocRay.Texture => _
-drawUnit! = |unit, texture|
+drawUnit! : Unit, RocRay.Texture, Bool => _
+drawUnit! = |unit, texture, selected|
     point = Hex.addPoint unit.position { x: 0, y: 0 }
     drawTo = {
         x: point.x,
@@ -690,7 +760,23 @@ drawUnit! = |unit, texture|
     Draw.texture_pro! {
         texture,
         source: source_,
-        dest: { width: unit_width, height: unit_height, x: drawTo.x - unit_width / 2, y: drawTo.y - unit_height / 2},
+        dest: {
+            width: unit_width + 4,
+            height: unit_height + 4,
+            x: drawTo.x - unit_width / 2 - 2,
+            y: drawTo.y - unit_height / 2 - 2},
+        origin: { x: 0, y: 0 },
+        rotation: 0,
+        tint: if selected then Green else if unit.army == Confederates then Red else Blue,
+    }
+    Draw.texture_pro! {
+        texture,
+        source: source_,
+        dest: {
+            width: unit_width,
+            height: unit_height,
+            x: drawTo.x - unit_width / 2,
+            y: drawTo.y - unit_height / 2},
         origin: { x: 0, y: 0 },
         rotation: 0,
         tint: White,

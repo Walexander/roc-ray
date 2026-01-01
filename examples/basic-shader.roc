@@ -83,15 +83,11 @@ init! = |{}|
         }
     )
 
-rotate = |radians|
-  c = Num.cos radians
-  s = Num.sin radians
+xlate = |{x, y}|
   {
     RocRay.identity &
-    m0: c,
-    m1: s,
-    m4: -1 * s,
-    m5: c,
+    m12: x,
+    m13: y,
   }
 lerp : F32, F32, F32 -> F32
 lerp = |from, to, t|
@@ -156,7 +152,7 @@ render! = |model, pf|
                 Draw.with_mode_shader!(
                     model.fog_shader.shader,
                     |{}|
-                        mat4 = rotate (Num.pi / 4)
+                        mat4 = xlate { x: 25, y: 50 }
                         _ = Shader.set_f32!(model.fog_shader, "amplitude", model.amplitude)
                             |> Shader.set_f32!("frequency", model.freq)
                             |> Shader.set_mat4!("u_model", mat4)

@@ -1,8 +1,10 @@
-module [Entity, System, CompDeathTime, CompFade, CompExplode, CompGraphic, CompVelocity, CompPosition, ECS, spawn, make, update]
-import rr.RocRay exposing [Color]
+module [Entity, System, CompDeathTime, CompFade, CompExplode, CompGraphic, CompVelocity, CompPosition, ECS, spawn, make, update, get_by_component]
+import rr.RocRay exposing [Color ]
 import Hex
 import PointyHex
 import rand.Random
+import Matrix4 exposing [Matrix4]
+
 Entity : {
   id: I32,
 }
@@ -27,6 +29,7 @@ CompExplode : {
 
 CompGraphic : {
   color: Color,
+  rotation: F32,
   radius: F32,
 }
 
@@ -42,6 +45,13 @@ CompAttack: {
 CompPosition : {
   x: F32,
   y: F32,
+}
+
+CompRotation : {
+  radians: F32,
+}
+CompTransform : {
+  transform: Matrix4
 }
 
 CompVelocity : {
@@ -72,10 +82,11 @@ ECS: {
   positionable: Dict I32 CompPosition,
   moveable: Dict I32 CompVelocity,
   scalable: Dict I32 CompGraphic,
+  transformable: Dict I32 CompTransform,
 
   health: Dict I32 CompHealth,
   occupants: Dict I32 CompOccupies,
-  occupants_by_cell: Dict Hex.Doubled I32,
+  # occupants_by_cell: Dict Hex.Doubled I32,
 
   emissions: List { lifetime: I32, position: CompPosition, explosion: CompExplode },
   removals: List Entity,
@@ -106,11 +117,12 @@ make = |rand| {
   killable: Dict.empty {},
   moveable: Dict.empty {},
   positionable: Dict.empty {},
+  transformable: Dict.empty {},
   explodable: Dict.empty {},
   scalable: Dict.empty {},
   health: Dict.empty {},
   occupants: Dict.empty {},
-  occupants_by_cell: Dict.empty {},
+  # occupants_by_cell: Dict.empty {},
   emissions: [],
   removals: [],
   attack_orders: [],
@@ -135,7 +147,7 @@ add_entity = |ecs|
 # spawn : ECS, { pos: { x: F32, y: F32 }, max_lifetime: I32, num_particles: U32 } -> ECS
 spawn = |ecs, { position ?? { x: 0, y: 0 }, num_particles ?? 0, max_lifetime ?? 120 }|
   rand_v = { Random.chain  <-
-    life: Random.bounded_u32(0, max_lifetime),
+    life: Random.bounded_u32(Num.to_f32 max_lifetime |> Num.div 2 |> Num.round, max_lifetime),
     dx: Random.bounded_i32 -100_000 100_000,
     dy: Random.bounded_i32 -100_000 100_000,
     r: Random.bounded_u8(192, 255),
@@ -152,34 +164,81 @@ spawn = |ecs, { position ?? { x: 0, y: 0 }, num_particles ?? 0, max_lifetime ?? 
   }
   next_v = Random.step ecs.rand rand_v
   life_frames = next_v.value.life |> Num.to_i32
-  life_scale = 10 / (Num.to_f32 life_frames)
+  life_scale = 0.1 * (Num.to_f32 life_frames)
   (ecs1, id) = add_entity ecs
 
   { ecs1&
     rand: next_v.state,
     killable: Dict.insert ecs1.killable id { lifetime: life_frames, dead_frame: life_frames },
     explodable: if num_particles <= 0 then Dict.remove ecs1.explodable id else Dict.insert ecs1.explodable id { num_particles },
-    scalable: Dict.insert ecs.scalable id {
+    scalable: Dict.insert ecs1.scalable id {
+        rotation: 0,
         radius: life_scale |> Num.to_f32,
         color: next_v.value.color,
     },
-    positionable: Dict.insert ecs.positionable id position,
-    moveable: Dict.insert ecs.moveable id { dx: next_v.value.dx, dy: next_v.value.dy },
+    transformable: Dict.insert ecs1.transformable id { transform: Matrix4.identity },
+    positionable: Dict.insert ecs1.positionable id (position),
+    moveable: Dict.insert ecs1.moveable id ( { dx: next_v.value.dx, dy: next_v.value.dy }),
   }
+
+
+Components : [
+  Position,
+  Moveable,
+  Transform,
+  Graphics,
+  Killable,
+]
+ComponentData : [
+  Position CompPosition,
+  Moveable CompVelocity,
+  Transform CompTransform,
+  Graphics CompGraphic,
+  Killable CompDeathTime,
+]
+
+  # get_by_component : ECS, List Components -> Dict I32 (List [Moveable CompVelocity, Position CompPosition, Transform CompTransform])
+get_by_component : ECS, List Components -> Dict I32 (List ComponentData)
+get_by_component = |ecs, components|
+   List.walk_with_index components (Set.empty {}) | ids, component, index|
+        c_ids = when component is
+            Transform -> Set.from_list(Dict.keys ecs.transformable)
+            Moveable -> Set.from_list(Dict.keys ecs.moveable)
+            Position -> Set.from_list(Dict.keys ecs.positionable)
+            Graphics -> Set.from_list(Dict.keys ecs.scalable)
+            Killable -> Set.from_list(Dict.keys ecs.scalable)
+
+        if index == 0 then c_ids
+        else Set.union ids c_ids
+  |> Set.walk (Dict.empty {}) |accum, id|
+      List.walk components accum |accum2, comp|
+        result = when comp is
+          Position -> Dict.get(ecs.positionable, id) |> Result.map_ok Position
+          Transform -> Dict.get(ecs.transformable, id) |> Result.map_ok Transform
+          Moveable -> Dict.get(ecs.moveable, id) |> Result.map_ok Moveable
+          Graphics -> Dict.get(ecs.scalable, id) |> Result.map_ok Graphics
+          Killable -> Dict.get(ecs.killable, id) |> Result.map_ok Killable
+        data = Result.map_ok result List.single |> Result.with_default []
+        existing = Dict.get accum2 id |> Result.with_default []
+        new_data = List.concat existing data
+        Dict.insert accum2 id new_data
+
 
 movement_system : ECS, U64 -> _
 movement_system = |ecs, dt|
     dt_ = Num.to_f32 dt
     helper = movement_helper dt_
     { ecs&
-      positionable:
-        Dict.walk ecs.moveable ecs.positionable |pos, key, value| helper pos key value
+      # positionable:
+      #   Dict.walk ecs.moveable ecs.positionable |pos, key, value| helper pos key value
     }
 movement_helper : F32 -> (Dict I32 CompPosition, I32, CompVelocity -> Dict I32 CompPosition)
 movement_helper = |dt_|
   |positions, id, { dx, dy }|
     Dict.get positions id
-      |> Result.map_ok |{x, y}| Dict.insert positions id { x: x + dx * dt_, y: y + dy * dt_}
+      |> Result.map_ok | {x, y}|
+          data = { x: x + dx * dt_, y: y + dy * dt_}
+          Dict.insert positions id data
       |> Result.with_default positions
 
 remove_entity = |ecs, id| {
@@ -192,21 +251,41 @@ remove_entity = |ecs, id| {
     moveable: Dict.remove ecs.moveable id,
     positionable: Dict.remove ecs.positionable id,
     scalable: Dict.remove ecs.scalable id,
+    transformable: Dict.remove ecs.transformable id,
 }
 
-attack_system : ECS -> ECS
-attack_system = |ecs|
-  attack_orders = Dict.to_list ecs.occupants
-      |> List.keep_oks |(id, occupant)|
-        List.keep_oks PointyHex.neighbors(occupant.cell) |cell|
-          Dict.get ecs.occupants_by_cell cell
-          |> Result.try |neighbor_id|
-            Dict.get ecs.occupants neighbor_id
-            |> Result.try |neighbor| if neighbor.army != occupant.army then Ok({ target: neighbor, target_id: neighbor_id }) else Err KeyNotFound
-        |> List.first
-        |> Result.map_ok |{ target, target_id }| { id, target, target_id }
+transform_system : ECS -> ECS
+transform_system = |ecs|
+  components = get_by_component ecs [Position, Graphics, Transform]
+  transforms : Dict I32 CompTransform
+  transforms = Dict.walk components (Dict.empty {}) |updates, id, component|
+      when component is
+        [Position pos, Graphics {rotation, radius},  Transform _] ->
+          scale = Num.max(24, 5 * radius) |> Num.min 48
+          scale_rotate = Matrix4.multiply(
+            Matrix4.rotate rotation,
+            Matrix4.scale { x: scale, y: scale }
+          )
+          transform = Matrix4.translate pos
+            |> Matrix4.multiply scale_rotate
+          Dict.insert updates id { transform }
+        _ -> updates
+  { ecs & transformable: transforms }
 
-  { ecs & attack_orders }
+
+# attack_system : ECS -> ECS
+# attack_system = |ecs|
+#   attack_orders = Dict.to_list ecs.occupants
+#       |> List.keep_oks |(id, occupant)|
+#         List.keep_oks PointyHex.neighbors(occupant.cell) |cell|
+#           Dict.get ecs.occupants_by_cell cell
+#           |> Result.try |neighbor_id|
+#             Dict.get ecs.occupants neighbor_id
+#             |> Result.try |neighbor| if neighbor.army != occupant.army then Ok({ target: neighbor, target_id: neighbor_id }) else Err KeyNotFound
+#         |> List.first
+#         |> Result.map_ok |{ target, target_id }| { id, target, target_id }
+
+#   { ecs & attack_orders }
 
 
 lifetime_system : ECS -> ECS
@@ -223,15 +302,15 @@ kill_system = |ecs|
   {ecs & removals }
 
 
-scaling_system : ECS -> ECS
-scaling_system = |ecs|
-  { ecs &
-      scalable: map2 ecs.killable ecs.scalable |killable, scalable|
-        { scalable &
-          radius: (killable.dead_frame |> Num.to_f32) / (killable.lifetime  |> Num.to_f32),
-        }
+# scaling_system : ECS -> ECS
+# scaling_system = |ecs|
+#   { ecs &
+#       scalable: map2 ecs.killable ecs.scalable |killable, scalable|
+#         { scalable &
+#           radius: (killable.dead_frame |> Num.to_f32) / (killable.lifetime  |> Num.to_f32),
+#         }
 
-  }
+#   }
 explode_system : ECS -> ECS
 explode_system = |ecs|
   emissions = List.keep_oks(ecs.removals, |{id}|
@@ -239,7 +318,7 @@ explode_system = |ecs|
     |> Result.map2 (Dict.get ecs.killable id) |{position, explosion}, { lifetime }|
       List.map(List.range { start: At 0, end: Before explosion.num_particles}, |_|
         {
-          position,
+          position: position,
           lifetime: (lifetime |> Num.to_f32 |> Num.div 8 |> Num.round),
           explosion: { num_particles: 0 }
         }
@@ -271,13 +350,15 @@ update = |model, dt|
     model &
     ecs: movement_system model.ecs dt
       |> kill_system
-      |> scaling_system
+      # |> scaling_system
       |> explode_system
       |> emitter_system
       |> removal_system
       |> lifetime_system
+      |> transform_system
       # |> |ecs|
-      #   if ecs.current_size == 0 then spawn(ecs, { position: { x: 0, y: 0 }, num_particles:  8, max_lifetime: 30 })
-      #     |> spawn { position: { x: 0, y: 0 }, num_particles:  8, max_lifetime: 30 }
+      #   if ecs.current_size == 0 then
+      #     spawn(ecs, { position: { x: 48, y: -92 }, num_particles:  1, max_lifetime: 180 })
+      #     # |> spawn { position: { x: 16, y: 64 }, num_particles:  16, max_lifetime: 30 }
       #   else ecs
   }

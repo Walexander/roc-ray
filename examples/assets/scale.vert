@@ -19,6 +19,7 @@ void main()
     fragTexCoord = vertexTexCoord;
     fragColor = vertexColor;
     fragPos = vertexPosition.xy;
+
     float amp = max - 1.0;
     float time_ = smoothstep(0.0, 1.0, time);
     float oscillation = abs(cos(time_ * 3.0 * PI));

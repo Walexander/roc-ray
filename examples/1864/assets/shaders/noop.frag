@@ -1,14 +1,11 @@
 #version 100
-// vim:filetype=glsl
 precision mediump float;
-
 varying vec2 fragTexCoord;
 varying vec4 fragColor;
-
 uniform sampler2D texture0;
-
+uniform vec4 colDiffuse;
 void main()
 {
-    gl_FragColor = texture2D(texture0, fragTexCoord) * fragColor;
-}
 
+    gl_FragColor = fragColor * vec4(texture2D(texture0, fragTexCoord));
+}
