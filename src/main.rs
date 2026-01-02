@@ -1036,31 +1036,7 @@ extern "C" fn roc_fx_load_texture(path: &RocStr) -> RocResult<RocBox<()>, RocStr
         Err(_) => RocResult::err("Unable to load texture, out of memory in the texture heap. Consider using ROC_RAY_MAX_TEXTURES_HEAP_SIZE env var to increase the heap size.".into()),
     }
 }
-// #[no_mangle]
-// extern "C" fn roc_fx_load_texture_from_bytes(
-//     bytes: &RocList<u8>,
-//     width: i32,
-//     height: i32,
-//     format_code: u32,
-// ) -> RocResult<RocBox<()>, Str> {
-//     if pixel_ptr.is_null() || byte_len == 0 {
-//         return RocResult::err("pixel pointer is null or byte length is 0");
 
-//     }
-//     let data = bytes.as_ptr() as *const c_void;
-
-//     unsafe {
-//         let img = raylib::LoadImageFromMemory(data, width, height, format_code);
-//     }
-//     raylib::core
-// }
-// extern "C" fn roc_fx_send_to_peer(bytes: &RocList<u8>, peer: &glue::PeerUUID) {
-//     if let Err(msg) = platform_mode::update(PlatformEffect::SendMsgToPeer) {
-//         display_fatal_error_message(msg, ExitErrCode::EffectNotPermitted);
-//     }
-
-//     let data = bytes.as_slice().to_vec();
-// }
 #[no_mangle]
 extern "C" fn roc_fx_draw_texture_rec(
     boxed_texture: RocBox<()>,
@@ -1079,6 +1055,7 @@ extern "C" fn roc_fx_draw_texture_rec(
         raylib::DrawTextureRec(*texture, source.into(), position.into(), color.into());
     }
 }
+
 #[no_mangle]
 extern "C" fn roc_fx_draw_texture_pro(
     boxed_texture: RocBox<()>,
@@ -1359,10 +1336,40 @@ extern "C" fn roc_fx_gen_image_color(width: i32, height: i32, color: glue::RocCo
         Ok(roc_box) => RocResult::ok(roc_box),
         Err(err) =>
             RocResult::err(
-                "Unble to generate image heap".into()
+                format!(
+                    "Unble to generate image heap: {}", err.to_string()
+                )
+                .as_str().into()
         )
     }
 }
+
+#[no_mangle]
+extern "C" fn roc_fx_gen_image_perlin_noise(width: i32, height: i32, offset_x: i32, offset_y: i32, scale: f32) -> RocResult<RocBox<()>, RocStr> {
+    let image = unsafe {
+        raylib::GenImagePerlinNoise(width.into(), height.into(), offset_x.into(), offset_y.into(), scale.into())
+    };
+
+    if image.height != height || image.width != width {
+        return RocResult::err(
+            "failed to generate image, invalid height and/or width do not match".into()
+        )
+    }
+
+    let heap = roc::image_heap();
+    let alloc_result = heap.alloc_for(image);
+
+    match alloc_result {
+        Ok(roc_box) => RocResult::ok(roc_box),
+        Err(err) =>
+            RocResult::err(
+            format!(
+                "Failed to generate image heap for Perlin Noise: {}", err.to_string()
+            ).as_str().into()
+        )
+    }
+}
+
 #[no_mangle]
 extern "C" fn roc_fx_load_texture_from_image(boxed_image: RocBox<()>) -> RocResult<RocBox<()>, RocStr> {
     if let Err(msg) = platform_mode::update(PlatformEffect::LoadTexture) {
@@ -1387,5 +1394,43 @@ extern "C" fn roc_fx_load_texture_from_image(boxed_image: RocBox<()>) -> RocResu
     match alloc_result {
         Ok(roc_box) => RocResult::ok(roc_box),
         Err(_) => RocResult::err("Unable to load texture, out of memory in the texture heap. Consider using ROC_RAY_MAX_TEXTURES_HEAP_SIZE env var to increase the heap size.".into()),
+    }
+}
+
+#[allow(unused_variables)]
+#[no_mangle]
+extern "C" fn roc_fx_update_texture_from_image(
+    boxed_texture: RocBox<()>,
+    boxed_image: RocBox<()>,
+) {
+    let texture: &raylib::Texture2D =
+        ThreadSafeRefcountedResourceHeap::box_to_resource(boxed_texture);
+
+    let image: &raylib::Image =
+        ThreadSafeRefcountedResourceHeap::box_to_resource(boxed_image);
+
+    unsafe {
+        raylib::UpdateTexture(
+            *texture,
+            image.data,
+        );
+    }
+}
+
+#[allow(unused_variables)]
+#[no_mangle]
+extern "C" fn roc_fx_set_shader_value_texture(
+    boxed_shader: RocBox<()>,
+    loc_index: i32,
+    boxed_texture: RocBox<()>,
+) {
+    let shader: &mut raylib::Shader =
+        ThreadSafeRefcountedResourceHeap::box_to_resource(boxed_shader);
+
+    let texture: &raylib::Texture2D =
+        ThreadSafeRefcountedResourceHeap::box_to_resource(boxed_texture);
+
+    unsafe {
+        raylib::SetShaderValueTexture(*shader, loc_index, *texture);
     }
 }

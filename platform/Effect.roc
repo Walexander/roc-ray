@@ -56,6 +56,7 @@ hosted [
     log!,
     load_texture!,
     load_texture_from_image!,
+    update_texture_from_image!,
     draw_texture_rec!,
     draw_texture_pro!,
     load_sound!,
@@ -76,6 +77,7 @@ hosted [
     random_i32!,
     load_font!,
     set_shader_value!,
+    set_shader_value_texture!,
     set_shader_value_vec2!,
     set_shader_value_matrix!,
     load_shader!,
@@ -84,6 +86,7 @@ hosted [
     texture_format!,
     begin_blend_mode!,
     end_blend_mode!,
+    gen_image_perlin_noise!,
     gen_image_color!
 ]
 
@@ -196,6 +199,7 @@ end_shader_mode! : {} => {}
 Texture := Box {}
 load_texture! : Str => Result Texture Str
 load_texture_from_image! : Image => Result Texture Str
+update_texture_from_image! : Texture, Image => {}
 draw_texture_rec! : Texture, RocRectangle, RocVector2, RocColor => {}
 draw_texture_pro! : Texture, RocRectangle, RocRectangle, RocVector2, F32, RocColor => {}
 draw_render_texture_rec! : RenderTexture, RocRectangle, RocVector2, RocColor => {}
@@ -240,10 +244,12 @@ get_shader_location! : Shader, Str => Result I32 Str
 set_shader_value! : Shader, I32, F32 => {}
 set_shader_value_vec2! : Shader, I32, RocVector2 => {}
 set_shader_value_matrix! : Shader, I32, F32, F32, F32, F32, F32, F32, F32, F32, F32, F32, F32, F32, F32, F32, F32, F32 => {}
+set_shader_value_texture! : Shader, I32, Texture => {}
 get_camera_matrix_2d! : Camera => RocMatrix
 
 Image := Box { width: I32, height: I32,  mipmaps: I32, format: I32, data: List U8 }
 gen_image_color! : I32, I32, RocColor => Result Image Str
+gen_image_perlin_noise! : I32, I32, I32, I32, F32 => Result Image Str
 
 configure_web_rtc! : Str => {}
 

@@ -12,6 +12,7 @@ module [
     set_f32!,
     set_vec2!,
     set_mat4!,
+    set_texture!,
 ]
 
 import InternalMatrix exposing [ Matrix ]
@@ -73,6 +74,13 @@ set_mat4! = |rs, key, value|
     location = Dict.get(rs.locations, key) |> Result.with_default Empty
     set_value_matrix! rs.shader location value
     rs
+
+set_texture! = |rs, key, texture|
+    location = Dict.get(rs.locations, key) |> Result.with_default Empty
+    when location is
+        Loaded @ShaderLocation({loc}) ->
+            Effect.set_shader_value_texture! rs.shader loc texture
+        _ -> {}
 
 set_value! : Shader, RenderShaderLocation, F32 => {}
 set_value! = |shader, location, value|

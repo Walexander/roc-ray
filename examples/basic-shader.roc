@@ -5,8 +5,6 @@ import rr.RocRay
 import rr.Camera
 import rr.Draw
 import rr.Keys
-import rr.InternalMatrix
-import rr.Effect
 import rr.Shader exposing []
 import rr.Mouse
 

@@ -383,12 +383,11 @@ pub struct RocMatrix {
 
 impl From<&RocMatrix> for raylib::Matrix {
     fn from(m: &RocMatrix) -> raylib::Matrix {
-        println!("raylib Matrix: {:?}", m);
         raylib::Matrix {
-            m0 : m.m0, m4 : m.m4, m8 : m.m8, m12 : m.m8,
-            m1 : m.m1, m5 : m.m5, m9 : m.m9, m13 : m.m13,
-            m2 : m.m2, m6 : m.m6, m10 : m.m10, m14 : m.m14,
-            m3 : m.m3, m7 : m.m7, m11 : m.m11, m15 : m.m15,
+            m0: m.m0, m4: m.m4,  m8: m.m8,  m12: m.m12,
+            m1: m.m1, m5: m.m5,  m9: m.m9,  m13: m.m13,
+            m2: m.m2, m6: m.m6, m10: m.m10, m14: m.m14,
+            m3: m.m3, m7: m.m7, m11: m.m11, m15: m.m15,
         }
     }
 }
@@ -396,10 +395,10 @@ impl From<&RocMatrix> for raylib::Matrix {
 impl From<raylib::Matrix> for RocMatrix {
     fn from(m: raylib::Matrix) -> RocMatrix {
         RocMatrix {
-            m0 : m.m0, m4 : m.m4, m8 : m.m8, m12 : m.m8,
-            m1 : m.m1, m5 : m.m5, m9 : m.m9, m13 : m.m13,
-            m2 : m.m2, m6 : m.m6, m10 : m.m10, m14 : m.m14,
-            m3 : m.m3, m7 : m.m7, m11 : m.m11, m15 : m.m15,
+            m0: m.m0, m4: m.m4,  m8: m.m8,  m12: m.m12,
+            m1: m.m1, m5: m.m5,  m9: m.m9,  m13: m.m13,
+            m2: m.m2, m6: m.m6, m10: m.m10, m14: m.m14,
+            m3: m.m3, m7: m.m7, m11: m.m11, m15: m.m15,
         }
     }
 }

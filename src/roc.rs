@@ -112,12 +112,12 @@ pub fn matrix_heap() -> &'static ThreadSafeRefcountedResourceHeap<raylib::Matrix
 
 // note this is checked and deallocated in the roc_dealloc function
 pub fn image_heap() -> &'static ThreadSafeRefcountedResourceHeap<raylib::Image> {
-    static MATRIX_HEAP: OnceLock<ThreadSafeRefcountedResourceHeap<raylib::Image>> = OnceLock::new();
+    static IMAGE_HEAP: OnceLock<ThreadSafeRefcountedResourceHeap<raylib::Image>> = OnceLock::new();
     const DEFAULT_ROC_RAY_MAX_IMAGE_HEAP_SIZE: usize = 100;
     let max_heap_size = std::env::var("ROC_RAY_MAX_IMAGE_HEAP_SIZE")
         .map(|v| v.parse().unwrap_or(DEFAULT_ROC_RAY_MAX_IMAGE_HEAP_SIZE))
         .unwrap_or(DEFAULT_ROC_RAY_MAX_IMAGE_HEAP_SIZE);
-    MATRIX_HEAP.get_or_init(|| {
+    IMAGE_HEAP.get_or_init(|| {
         ThreadSafeRefcountedResourceHeap::new(max_heap_size)
             .expect("Failed to allocate mmap for heap references.")
     })

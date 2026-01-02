@@ -22,6 +22,7 @@ module [
     display_fps!,
     take_screenshot!,
     gen_image_color!,
+    gen_image_perlin_noise!,
     log!,
     load_file_to_str!,
     send_to_peer!,
@@ -294,6 +295,12 @@ random_i32! = |{ min, max }| Effect.random_i32!(min, max)
 
 gen_image_color! = |width, height, color|
     Effect.gen_image_color! width height rgba(color)
+    |> Result.map_err LoadErr
+
+
+gen_image_perlin_noise! : Vector2, Vector2, F32 => Result Effect.Image [LoadErr Str]
+gen_image_perlin_noise! = |dims, offset, scale|
+    Effect.gen_image_perlin_noise!(Num.round(dims.x), Num.round(dims.y), Num.round(offset.x), Num.round(offset.y), scale)
     |> Result.map_err LoadErr
 
 measure_text! = |{ text, size, spacing }|
