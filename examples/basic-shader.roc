@@ -1,11 +1,10 @@
 app [Model, init!, render!] { rr: platform "../platform/main.roc" }
 import rr.RocRay exposing [Texture, Camera]
 
-import rr.RocRay
 import rr.Camera
 import rr.Draw
 import rr.Keys
-import rr.Shader exposing []
+import rr.Shader
 import rr.Mouse
 
 import rr.Texture
@@ -21,8 +20,7 @@ Model : {
     paused: Bool,
     marker_pos: RocRay.Vector2,
     empty: RocRay.Texture,
-    fog_shader: Shader.RenderShader,
-    fire_shader: Shader.RenderShader,
+    ripple_shader: Shader.RenderShader,
     scale_shader: Shader.RenderShader,
     animation_frames: U32,
 }
@@ -30,26 +28,13 @@ Model : {
 center = { x: width / 2, y: height / 2 }
 init! : {} => Result Model _
 init! = |{}|
-
     RocRay.set_target_fps! 60
     RocRay.display_fps! { fps: Visible, pos: { x: 10, y: 10 } }
-    RocRay.init_window!({ title: "Basic Shapes", width, height })
-
-    fog_shader = Shader.new!(
-        "examples/assets/vertex-shader.vs",
-        "examples/assets/fragment-shader.fs",
-        ["time", "frequency", "amplitude", "u_model"]
-    )?
+    RocRay.init_window!({ title: "Basic Shader", width, height })
 
     amplitude = 10.333
     freq = 2.0
-
     texture = Texture.load!("examples/assets/plasma.png")?
-
-
-    format = Texture.get_format! texture
-    dbg "Texture format is ${Inspect.to_str format}"
-
     camera = Camera.create!(
         {
             zoom: 1,
@@ -59,34 +44,30 @@ init! = |{}|
         },
     )?
     image = RocRay.gen_image_color!(1, 1, White)?
-        # |> Result.on_err |e|
-        #     dbg "Got a fucking error? ${Inspect.to_str e}"
-        #     crash("failed to load image")
-    dbg "Loaded image is ${Inspect.to_str image}"
     empty_texture = Texture.from_image!(image)?
 
     Ok(
         {
             marker_pos: { x: 0, y: 0 },
-            fog_shader,
             empty: empty_texture,
-            scale_shader: Shader.new!("examples/assets/scale.vert", "examples/assets/fragment-noop.fs", ["time", "max", "center"])?,
+            scale_shader: Shader.new!(
+                "examples/assets/shaders/scale.vert",
+                "examples/assets/shaders/default.frag",
+                ["time", "max", "center"]
+            )?,
+            ripple_shader: Shader.new!(
+                "examples/assets/shaders/default.vert",
+                "examples/assets/shaders/ripple.frag",
+                ["time", "frequency", "amplitude"]
+            )?,
             texture,
             camera,
             freq,
             amplitude,
             animation_frames: 0,
             paused: Bool.false,
-            fire_shader: Shader.new!("examples/1864/assets/shaders/default.vs", "examples/1864/assets/shaders/explosion.frag", ["u_time", "u_duration"])?,
         }
     )
-
-xlate = |{x, y}|
-  {
-    RocRay.identity &
-    m12: x,
-    m13: y,
-  }
 lerp : F32, F32, F32 -> F32
 lerp = |from, to, t|
     from + (to - from) * t
@@ -99,7 +80,7 @@ render! = |model, pf|
         else model.marker_pos
 
     _ = if Bool.not(model.paused) then
-        Shader.set_f32!(model.fog_shader, "time", game_time)
+        Shader.set_f32!(model.ripple_shader, "time", game_time)
         |> \_ -> {}
     else {}
 
@@ -142,18 +123,14 @@ render! = |model, pf|
     t = Num.min rounds 1.0
 
     Draw.draw!(
-        # RGBA 128 128 128 255,
-        # RGBA 92 92 92 0,
-        RGBA 0x64 0x95 0xed 0xff,
+        RGBA 128 128 128 255,
         |{}|
             Draw.with_mode_2d! model.camera |{}|
                 Draw.with_mode_shader!(
-                    model.fog_shader.shader,
+                    model.ripple_shader.shader,
                     |{}|
-                        mat4 = xlate { x: 25, y: 50 }
-                        _ = Shader.set_f32!(model.fog_shader, "amplitude", model.amplitude)
+                        _ = Shader.set_f32!(model.ripple_shader, "amplitude", model.amplitude)
                             |> Shader.set_f32!("frequency", model.freq)
-                            |> Shader.set_mat4!("u_model", mat4)
                         Draw.texture_pro! {
                             origin: { x: 0, y: 0 },
                             dest: { x: -256, y: -256, width: 512, height: 512 },
@@ -171,15 +148,13 @@ render! = |model, pf|
                     |> \_ -> ({})
                     Draw.ring! {
                         center: marker_pos,
-                        inner: 12,
-                        outer: 14,
+                        inner: 28,
+                        outer: 32,
                         start: 90,
                         end: 360 + 90,
                         segments: 6,
                         color: RocRay.fade(Black, 1.0)
                     }
-                draw_explosion! model marker_pos animation_frames duration_f
-
             text =
                 """
                 [Up Dn] Frequency = ${Inspect.to_str freq}
@@ -187,7 +162,6 @@ render! = |model, pf|
                 [Enter]Paused = ${Inspect.to_str model.paused}
                 Center = ${Inspect.to_str marker_pos}
                 """
-
             text_dims = RocRay.measure_text! { text, size: 16, spacing: 1 }
             text_pos = { x: 20, y: 20 }
             padding = 16
@@ -200,63 +174,22 @@ render! = |model, pf|
                 },
                 color: RocRay.fade(Black, 0.5)
             }
-
-            # Draw.rectangle! {
-            #     rect: {
-            #         x: text_pos.x  - 4,
-            #         y: text_pos.y - 4,
-            #         width: text_dims.x + 8,
-            #         height: text_dims.y + 8,,
-            #     },
-            #     color: RocRay.fade(Black, 0.5)
-            # }
             Draw.text! {
                 size: 16,
                 text,
                 pos: text_pos,
                 color: White,
             }
+            Draw.text! {
+                size: 16,
+                text: "Click to animate",
+                pos: { x: 32, y: height - 24 },
+                color: White,
+            }
 
     )
-    Ok({ model & freq, amplitude,
-            marker_pos,
-            paused: if Keys.pressed(pf.keys, KeyEnter) then Bool.not model.paused else model.paused,
-            animation_frames
+    Ok({model & freq, amplitude,
+        marker_pos,
+        paused: if Keys.pressed(pf.keys, KeyEnter) then Bool.not model.paused else model.paused,
+        animation_frames
     })
-
-draw_explosion! = |model, marker_pos, animation_frames, duration_f|
-    Draw.with_blend_mode! Multiplied |{}|
-        Draw.with_mode_shader! model.fire_shader.shader |{}|
-            Shader.set_f32! model.fire_shader "u_duration" (duration_f)
-            |> Shader.set_f32! "u_time" (Num.to_f32(animation_frames))
-            |> \_ -> {}
-            Draw.texture_pro! {
-                texture: model.empty,
-                origin: { x: 0, y: 0 },
-                rotation: 30,
-                dest: {
-                    x: marker_pos.x,
-                    y: marker_pos.y,
-                    width: 80,
-                    height: 80,
-                },
-                source: {
-                    x: 0, y: 0, width: 1, height: 1,
-                },
-                tint: RocRay.fade(Black, 1.0)
-            }
-            Draw.texture_pro! {
-                texture: model.empty,
-                origin: { x: 0, y: 0 },
-                rotation: 0,
-                dest: {
-                    x: marker_pos.x - 12.5,
-                    y: marker_pos.y - 12.5,
-                    width: 15,
-                    height: 20,
-                },
-                source: {
-                    x: 0, y: 0, width: 1, height: 1,
-                },
-                tint: RocRay.fade(White, 1.0)
-            }

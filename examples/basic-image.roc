@@ -31,7 +31,9 @@ init! = |{}|
     noise_image = RocRay.gen_image_perlin_noise!(noise_dims, {x: 0, y: 0}, scale)?
     noise_texture = Texture.from_image!(noise_image)?
     Ok({noise_texture, plasma, animation_frames: 0, paused: Bool.false,
-        shader: Shader.new!("examples/assets/vertex-shader.vs", "examples/assets/shaders/dissolve.frag",
+        shader: Shader.new!(
+            "examples/assets/shaders/default.vert",
+            "examples/assets/shaders/dissolve.frag",
             ["progress", "softness", "noiseTex"])?,
         direction: Forward,
         scale,
@@ -55,16 +57,13 @@ render! = |model, pf|
             Forward
         else model.direction
 
-    scale = if Keys.pressed pf.keys KeySpace then
-        # scale_ = RocRay.random_i32! { min: 10, max: 1000 } |> Num.to_f32 |> Num.div 1000 |> Num.mul 15
-        scale_ = model.scale
-        image = RocRay.gen_image_perlin_noise!(noise_dims, {x: Num.to_f32 animation_frames, y: 0}, scale_)
+    if Keys.pressed pf.keys KeySpace then
+        image = RocRay.gen_image_perlin_noise!(noise_dims, {x: Num.to_f32 animation_frames, y: 0}, model.scale)
         when image is
             Ok img ->
                 Texture.update_from_image! model.noise_texture img
-                scale_
-            _ -> model.scale
-    else model.scale
+            _ -> {}
+    else {}
     Draw.draw!(
         RGBA 192 192 192 255,
         |{}|
@@ -82,10 +81,10 @@ render! = |model, pf|
                 tint: White
             }
             Draw.text! {
-                text: scale |> Num.mul 100 |> Num.round |> Num.to_f32 |> Num.div 100 |> Inspect.to_str,
+                text: "[Space] for new noise, Click to restart animation",
+                pos: { x: 32, y: height - 24 },
                 size: 16,
-                pos: {x: width - 64, y: 8 },
-                color: Green,
+                color: Red,
             }
             Draw.with_mode_shader! model.shader.shader |{}|
                 Shader.set_f32! model.shader "progress" progress
@@ -115,6 +114,5 @@ render! = |model, pf|
         paused: if Keys.pressed(pf.keys, KeyEnter) then Bool.not model.paused else model.paused,
         direction,
         animation_frames,
-        scale,
     })
 
