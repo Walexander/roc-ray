@@ -1,4 +1,4 @@
-module [ Army, Orders, YearOfDecision, initialize! ]
+module [ Army, Orders, YearOfDecision, initialize ]
 import rr.RocRay exposing [ Camera, Vector2 ]
 import rr.Effect
 import rr.Shader
@@ -66,9 +66,6 @@ YearOfDecision : {
         ring: Shader.RenderShader,
         particle: Shader.RenderShader,
     },
-    # background: Sprite,
-    # backgrounds: List Sprite,
-    # screenState : ScreenState,
     sounds: {
         power_up: RocRay.Sound,
         power_down: RocRay.Sound,
@@ -79,8 +76,7 @@ YearOfDecision : {
     ecs: Particle.ECS,
 }
 
-initialize! : Camera, _, _, _, _, _ => YearOfDecision
-initialize! =  |camera, textures, render_textures, shaders, sounds, camera_settings|
+initialize =  |{ camera, textures, render_textures, shaders, sounds, base_camera }|
     seed = Effect.random_i32! 1 10000
 
     noise_fn = Noise.seeded_perlin2d seed
@@ -108,7 +104,7 @@ initialize! =  |camera, textures, render_textures, shaders, sounds, camera_setti
         shaders,
         playerVelocity: { x: 0, y: 0 },
         border: Hex.border,
-        base_camera: camera_settings,
+        base_camera,
         seed,
         rand,
         units: Unit.initial,

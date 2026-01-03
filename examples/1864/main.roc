@@ -43,7 +43,7 @@ screen = {
     height: 768
 }
 
-camera_settings = {
+base_camera = {
     target: { x: 0.0, y: 0 },
     offset: {x: screen.width / 2, y: screen.height / 2 },
     zoom: 1.125,
@@ -56,7 +56,7 @@ init! = |{}|
     RocRay.display_fps! { fps: Visible, pos: { x: 10, y: 10 } }
     RocRay.init_window! { width: screen.width, height: screen.height, title: "Silly Things" }
 
-    camera = Camera.create!(camera_settings)?
+    camera = Camera.create!(base_camera)?
 
     hexTexture = Texture.load!("examples/1864/assets/kenney-tiles.png")?
     top_tiles = Texture.load!("examples/1864/assets/topTiles.png")?
@@ -100,14 +100,14 @@ init! = |{}|
             full_tiles: hexTexture
         }
     baseState : YearOfDecision
-    baseState = Model.initialize!(
+    baseState = Model.initialize({
         camera,
         textures,
         render_textures,
         shaders,
-        { power_up, power_down, ok, horse, wagon },
-        camera_settings
-    )
+        sounds: { power_up, power_down, ok, horse, wagon },
+        base_camera
+    })
     Ok baseState
 
 render! : YearOfDecision, RocRay.PlatformState => Result YearOfDecision []

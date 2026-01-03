@@ -80,4 +80,10 @@ update! = |model, move, path_finder|
           Num.max(0, model.countdown |> Num.sub_wrap 1_000)
       else 0 }
     ResetGame ->
-      Model.initialize!(model.camera, model.textures, model.render_textures, model.shaders, model.sounds, model.base_camera)
+      Model.initialize({
+        camera: model.camera,
+        textures:  model.textures,
+        render_textures: model.render_textures,
+        shaders: model.shaders,
+        sounds: model.sounds,
+        base_camera: model.base_camera})
