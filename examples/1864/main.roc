@@ -223,7 +223,10 @@ render! = |model, pf|
         if Keys.down pf.keys KeyLeftShift then
             render_trauma_bar! world.trauma intensity
         else {}
-        render_debug! world  pf.mouse.position pf.keys debugText
+
+        if debug_mode then
+            render_debug! world  pf.mouse.position debugText
+        else {}
 
     render_sound! world player_move_
 
@@ -299,7 +302,7 @@ render_fog! = |model|
                 rotation: 0,
                 tint: White })
 
-render_debug! = |model, mouse_pos, keys, debug_text|
+render_debug! = |model, mouse_pos, debug_text|
     unit_finder = |id| |u| u.id == id
     Draw.circle! {
         center: mouse_pos,
@@ -320,28 +323,25 @@ render_debug! = |model, mouse_pos, keys, debug_text|
     Unit Summary: ${ Unit.summary summary_unit [] }
     """
     summary_text_color = if summary_unit.army == Confederates then Red else Silver
-    summary_text_dims = Effect.measure_text! summary_text 24 1 |> InternalVector.to_vector2
+    summary_text_dims =
+        Effect.measure_text! summary_text 24 1 |> InternalVector.to_vector2
     Draw.text! { pos: { x: 128+10, y: screen.height - (Num.to_f32 summary_text_dims.y + 24) }, text: summary_text, size: 24, color: summary_text_color }
     debug_text_dims = Effect.measure_text! debug_text 16 1 |> InternalVector.to_vector2
-    debug_mode = Keys.down keys KeyLeftShift
 
-    if debug_mode then
-        debug_pos = {
-            x: screen.width - (Num.to_f32 debug_text_dims.x) - 48,
-            y: screen.height - (Num.to_f32 debug_text_dims.y) - 24
-        }
-        Draw.rectangle! {
-            rect: {
-                x: debug_pos.x - 4,
-                y: debug_pos.y - 4,
-                width: debug_text_dims.x + 12,
-                height: debug_text_dims.y + 8,
-            },
-            color: RocRay.fade(Black, 0.75),
-        }
-        Draw.text! { pos: debug_pos, text: debug_text, size: 16, color: White }
-    else
-        {}
+    debug_pos = {
+        x: screen.width - (Num.to_f32 debug_text_dims.x) - 48,
+        y: screen.height - (Num.to_f32 debug_text_dims.y) - 24
+    }
+    Draw.rectangle! {
+        rect: {
+            x: debug_pos.x - 4,
+            y: debug_pos.y - 4,
+            width: debug_text_dims.x + 12,
+            height: debug_text_dims.y + 8,
+        },
+        color: RocRay.fade(Black, 0.75),
+    }
+    Draw.text! { pos: debug_pos, text: debug_text, size: 16, color: White }
 render_particle_debug! = |{x, y, scale, dead_frame, lifetime}|
     debug_text =
             """
@@ -469,10 +469,10 @@ render_game! = |model, pf, path_finder|
                 Stalemate -> Green
                 InControl Union -> Blue
                 InControl Confederates -> Red
-           renderHexOutline! model.hoverCell White
            drawPath! unitPath_ White 5 Bool.false
            render_glow! model summary_unit
            render_units! model summary_unit
+           renderHexOutline! model.hoverCell White
 
            if planning_mode then
                 cube_path = path_finder summary_unit.cell model.hoverCell

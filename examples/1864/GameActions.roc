@@ -42,9 +42,9 @@ inputs_to_move = |model, is_occupied, unit_from_cell, hover_coords, keys, button
         |> Result.with_default NoMove
     else if hover_cell == model.hoverCell then
       if Keys.down keys KeyLeftControl then
-        MoveUnit { unit_index: model.selectedIndex, to: hover_cell }
-      else
         OrderMove { id: 2, to: hover_cell }
+      else
+        MoveUnit { unit_index: model.selectedIndex, to: hover_cell }
     else
       NoMove
   else if Keys.pressed keys KeySpace then
