@@ -1,6 +1,7 @@
 module [PlayerMove, inputs_to_move, update!]
 import rr.Mouse
 import rr.Keys
+import rr.Effect
 import Hex
 import Unit
 import HexTile
@@ -12,6 +13,10 @@ PlayerMove : [ IncreaseTimer,
   DecreaseTimer,
   ResetGame,
   MoveUnit MoveUnitData,
+  OrderMove {
+    to: Hex.Doubled,
+    id: I32,
+  },
   SelectUnit I8,
   AddTrauma,
   ToggleTerrain Hex.Doubled HexTile.Terrain,
@@ -36,7 +41,10 @@ inputs_to_move = |model, is_occupied, unit_from_cell, hover_coords, keys, button
         |> Result.map_ok(\u -> SelectUnit u.id)
         |> Result.with_default NoMove
     else if hover_cell == model.hoverCell then
-      MoveUnit { unit_index: model.selectedIndex, to: hover_cell }
+      if Keys.down keys KeyLeftControl then
+        MoveUnit { unit_index: model.selectedIndex, to: hover_cell }
+      else
+        OrderMove { id: 2, to: hover_cell }
     else
       NoMove
   else if Keys.pressed keys KeySpace then
@@ -81,9 +89,13 @@ update! = |model, move, path_finder|
       else 0 }
     ResetGame ->
       Model.initialize({
+        seed: Effect.random_i32! 1 10_000,
         camera: model.camera,
         textures:  model.textures,
         render_textures: model.render_textures,
         shaders: model.shaders,
         sounds: model.sounds,
         base_camera: model.base_camera})
+    OrderMove { id, to } -> {model&
+        ecs: Particle.move_to model.ecs id to
+    }

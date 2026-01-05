@@ -6,6 +6,7 @@ module [
   is_in_bounds,
   toggle_terrain,
   get_cell_cost,
+  get_movement_cost,
   get_terrain,
   texture_position,
   make_path_finder,
@@ -209,6 +210,12 @@ texture_position = |tile, width, height|
     Water -> {x: 0 * width, y: height * 4 }
 
 
+get_movement_cost = |map|
+  |end|
+      Dict.get map.tiles end
+      |> Result.map_ok .terrain
+      |> Result.map_ok terrain_cost
+      |> Result.with_default 10_000
 get_cell_cost = |map|
   |dest, start, end|
     best_path = PointyHex.lerp_path start dest |> List.get 1

@@ -1,8 +1,9 @@
-module [Entity, System, CompDeathTime, CompFade, CompExplode, CompGraphic, CompVelocity, CompPosition, ECS, spawn, make, update, get_by_component]
+module [Entity, System, CompDeathTime, CompRender, CompFade, CompExplode, CompGraphic, CompVelocity, CompPosition, ECS, ComponentData, Components,
+    add, spawn, make, update, get_by_component, move_to]
 import rr.RocRay exposing [Color ]
 import Hex
-import PointyHex
 import rand.Random
+import PointyHex
 import Matrix4 exposing [Matrix4]
 
 Entity : {
@@ -12,6 +13,7 @@ CompDeathTime: {
   lifetime: I32,
   dead_frame: I32,
 }
+PathFinder : Hex.Doubled, Hex.Doubled -> List Hex.Doubled
 CompFade : {
       rRate: U8,
     rMin: U8,
@@ -38,37 +40,87 @@ CompHealth: {
   current_health: U16
 }
 
-CompAttack: {
-  attack_damaage: U16,
-}
-
 CompPosition : {
   x: F32,
   y: F32,
 }
 
-CompRotation : {
-  radians: F32,
-}
+# CompAttack: {
+#   attack_damaage: U16,
+# }
+# CompRotation : {
+#   radians: F32,
+# }
 CompTransform : {
   transform: Matrix4
 }
-
 CompVelocity : {
   dx: F32,
   dy: F32,
 }
-
+CompMoveRequest : {
+  destination: Hex.Doubled
+}
+CompMoveSegment: {
+  start: Hex.Point,
+  end: Hex.Point,
+  rate: F32,
+  progress: F32,
+}
+CompPathRequest : {
+  start: Hex.Doubled,
+  goal: Hex.Doubled,
+}
 CompOccupies : {
   cell: Hex.Doubled,
   army: [ Union, Confederates ]
 }
-System: ECS -> ECS
+CompPath : {
+  path: List Hex.Doubled,
+}
+
 AttackOrders : {
   id: I32,
   target: CompOccupies,
   target_id: I32,
 }
+CompRender : [
+  Texture {
+    texture: RocRay.Texture,
+    source: RocRay.Rectangle,
+    origin: RocRay.Vector2,
+    scale: RocRay.Vector2,
+  }
+]
+Components : [
+  Position,
+  Moveable,
+  Transform,
+  Graphics,
+  Killable,
+  MoveRequest,
+  Occupies,
+  PathRequest,
+  MoveSegment,
+  Renderable,
+  Path,
+]
+
+ComponentData : [
+  Position CompPosition,
+  Moveable CompVelocity,
+  Transform CompTransform,
+  Graphics CompGraphic,
+  Killable CompDeathTime,
+  MoveRequest CompMoveRequest,
+  PathRequest CompPathRequest,
+  Occupies CompOccupies,
+  MoveSegment CompMoveSegment,
+  Renderable CompRender,
+  Path CompPath,
+]
+
+System: ECS -> ECS
 ECS: {
   entities: List Entity,
   next_size: I32,
@@ -83,28 +135,19 @@ ECS: {
   moveable: Dict I32 CompVelocity,
   scalable: Dict I32 CompGraphic,
   transformable: Dict I32 CompTransform,
-
   health: Dict I32 CompHealth,
   occupants: Dict I32 CompOccupies,
-  # occupants_by_cell: Dict Hex.Doubled I32,
-
   emissions: List { lifetime: I32, position: CompPosition, explosion: CompExplode },
   removals: List Entity,
   attack_orders: List AttackOrders,
+  paths: Dict I32 CompPath,
+  renderables: Dict I32 CompRender,
+  path_requests: Dict I32 CompPathRequest,
+  move_requests: Dict I32 CompMoveRequest,
+  move_segments: Dict I32 CompMoveSegment,
+  render_requests: List CompRender,
 }
 
-
-
-gen_entities = |count|
-  List.repeat { id: 0 } count
-  |> gen_entities_helper 0
-
-gen_entities_helper = |entities, index|
-  List.get entities index
-    |> Result.map_ok |entity|
-      List.set entities index { entity& id: Num.to_i32 index }
-      |> gen_entities_helper (index + 1)
-    |> Result.with_default entities
 
 make : Random.State -> ECS
 make = |rand| {
@@ -122,10 +165,15 @@ make = |rand| {
   scalable: Dict.empty {},
   health: Dict.empty {},
   occupants: Dict.empty {},
-  # occupants_by_cell: Dict.empty {},
+  path_requests: Dict.empty {},
+  move_requests: Dict.empty {},
+  move_segments: Dict.empty {},
+  paths: Dict.empty {},
+  renderables: Dict.empty {},
   emissions: [],
   removals: [],
   attack_orders: [],
+  render_requests: [],
 }
 
 add_entity : ECS -> (ECS, I32)
@@ -137,10 +185,6 @@ add_entity = |ecs|
     next_size: id,
     entities: List.append ecs.entities { id },
     current_size: ecs.current_size + 1,
-    # fadable: Dict.insert ecs.fadable id { rRate: 0, rMin: 0,  gRate: 0, gMin: 0, bRate: 0, bMin: 0, aRate: 0, aMin: 0 },
-    # explodable: Dict.insert ecs.explodable id { num_particles: 0 },
-    # positionable: Dict.insert ecs.positionable id { x: 0, y: 0 },
-    # moveable: Dict.insert ecs.moveable id { dx: 0.25, dy: 0.15 },
   }, id)
 
 
@@ -156,12 +200,11 @@ spawn = |ecs, { position ?? { x: 0, y: 0 }, num_particles ?? 0, max_lifetime ?? 
     a: Random.bounded_u8(128, 255),
   } |> Random.map |{life, dx, dy, r, g, b, a}| {
       life,
-      # dx: (Num.to_f32 life) / 64, #Num.to_f32 dx |> Num.mul (Num.to_f32 max_lifetime) |> Num.div (max_lifetime|> Num.to_f32 |> Num.mul 5_000_000),
       dx: dx |> Num.to_f32 |> Num.div 100_00_000,
       dy: dy |> Num.to_f32 |> Num.div 100_00_000,
-      # dy: Num.to_f32 dy |> Num.div 100_000_000,  #|> Num.mul Num.mul (Num.to_f32 max_lifetime) |> Num.div (max_lifetime|> Num.to_f32 |> Num.mul 100_000_000),
       color: RGBA(r, g, b, a)
   }
+
   next_v = Random.step ecs.rand rand_v
   life_frames = next_v.value.life |> Num.to_i32
   life_scale = 0.1 * (Num.to_f32 life_frames)
@@ -181,35 +224,43 @@ spawn = |ecs, { position ?? { x: 0, y: 0 }, num_particles ?? 0, max_lifetime ?? 
     moveable: Dict.insert ecs1.moveable id ( { dx: next_v.value.dx, dy: next_v.value.dy }),
   }
 
+add : ECS, List ComponentData -> ECS
+add = |ecs, components|
+  ( ecs_, id ) = add_entity ecs
+  List.walk components ecs_ |accum, component|
+    when component is
+      Position position -> { accum& positionable: Dict.insert accum.positionable id position }
+      Moveable velocity -> {accum& moveable: Dict.insert accum.moveable id velocity }
+      Transform xform -> { accum& transformable: Dict.insert accum.transformable id xform}
+      Killable life -> { accum& killable: Dict.insert accum.killable id life }
+      Graphics graphics -> { accum& scalable: Dict.insert accum.scalable id graphics }
+      MoveRequest request -> {accum & move_requests: Dict.insert accum.move_requests id request}
+      PathRequest request -> {accum & path_requests: Dict.insert accum.path_requests id request}
+      Occupies occupancy -> {accum & occupants: Dict.insert accum.occupants id occupancy}
+      MoveSegment segment -> {accum & move_segments: Dict.insert accum.move_segments id segment}
+      Path path -> {accum & paths: Dict.insert accum.paths id path}
+      Renderable render -> {accum & renderables: Dict.insert accum.renderables id render }
+      # Drawable data -> { accum& drawable: Dict.insert accum.drawable id data }
+      # Pathable path -> {accum& pathable: Dict.insert accum.pathable id path }
 
-Components : [
-  Position,
-  Moveable,
-  Transform,
-  Graphics,
-  Killable,
-]
-ComponentData : [
-  Position CompPosition,
-  Moveable CompVelocity,
-  Transform CompTransform,
-  Graphics CompGraphic,
-  Killable CompDeathTime,
-]
-
-  # get_by_component : ECS, List Components -> Dict I32 (List [Moveable CompVelocity, Position CompPosition, Transform CompTransform])
 get_by_component : ECS, List Components -> Dict I32 (List ComponentData)
 get_by_component = |ecs, components|
-   List.walk_with_index components (Set.empty {}) | ids, component, index|
+   List.walk_with_index components (Set.empty {}) |ids, component, index|
         c_ids = when component is
-            Transform -> Set.from_list(Dict.keys ecs.transformable)
-            Moveable -> Set.from_list(Dict.keys ecs.moveable)
-            Position -> Set.from_list(Dict.keys ecs.positionable)
-            Graphics -> Set.from_list(Dict.keys ecs.scalable)
-            Killable -> Set.from_list(Dict.keys ecs.scalable)
+            Transform -> Dict.keys ecs.transformable
+            Moveable -> Dict.keys ecs.moveable
+            Position -> Dict.keys ecs.positionable
+            Graphics -> Dict.keys ecs.scalable
+            Killable -> Dict.keys ecs.scalable
+            MoveRequest -> Dict.keys ecs.move_requests
+            MoveSegment -> Dict.keys ecs.move_segments
+            Occupies -> Dict.keys ecs.occupants
+            PathRequest -> Dict.keys ecs.path_requests
+            Path -> Dict.keys ecs.paths
+            Renderable -> Dict.keys ecs.renderables
 
-        if index == 0 then c_ids
-        else Set.union ids c_ids
+        if index == 0 then Set.from_list c_ids
+        else Set.intersection ids Set.from_list(c_ids)
   |> Set.walk (Dict.empty {}) |accum, id|
       List.walk components accum |accum2, comp|
         result = when comp is
@@ -218,29 +269,18 @@ get_by_component = |ecs, components|
           Moveable -> Dict.get(ecs.moveable, id) |> Result.map_ok Moveable
           Graphics -> Dict.get(ecs.scalable, id) |> Result.map_ok Graphics
           Killable -> Dict.get(ecs.killable, id) |> Result.map_ok Killable
+          MoveRequest -> Dict.get(ecs.move_requests, id) |> Result.map_ok MoveRequest
+          Occupies -> Dict.get(ecs.occupants, id) |> Result.map_ok Occupies
+          PathRequest -> Dict.get(ecs.path_requests, id) |> Result.map_ok PathRequest
+          MoveSegment -> Dict.get(ecs.move_segments, id) |> Result.map_ok MoveSegment
+          Renderable -> Dict.get(ecs.renderables, id) |> Result.map_ok Renderable
+          Path -> Dict.get(ecs.paths, id) |> Result.map_ok Path
         data = Result.map_ok result List.single |> Result.with_default []
         existing = Dict.get accum2 id |> Result.with_default []
         new_data = List.concat existing data
         Dict.insert accum2 id new_data
 
-
-movement_system : ECS, U64 -> _
-movement_system = |ecs, dt|
-    dt_ = Num.to_f32 dt
-    helper = movement_helper dt_
-    { ecs&
-      # positionable:
-      #   Dict.walk ecs.moveable ecs.positionable |pos, key, value| helper pos key value
-    }
-movement_helper : F32 -> (Dict I32 CompPosition, I32, CompVelocity -> Dict I32 CompPosition)
-movement_helper = |dt_|
-  |positions, id, { dx, dy }|
-    Dict.get positions id
-      |> Result.map_ok | {x, y}|
-          data = { x: x + dx * dt_, y: y + dy * dt_}
-          Dict.insert positions id data
-      |> Result.with_default positions
-
+remove_entity : ECS, I32 -> ECS
 remove_entity = |ecs, id| {
     ecs&
     entities: List.keep_if ecs.entities |{id: id_}| id_ != id,
@@ -252,8 +292,152 @@ remove_entity = |ecs, id| {
     positionable: Dict.remove ecs.positionable id,
     scalable: Dict.remove ecs.scalable id,
     transformable: Dict.remove ecs.transformable id,
+    paths: Dict.remove ecs.paths id,
+    occupants: Dict.remove ecs.occupants id,
+    move_segments: Dict.remove ecs.move_segments id,
+    path_requests: Dict.remove ecs.path_requests id,
+    move_requests: Dict.remove ecs.move_requests id,
 }
 
+## TODO: when moving, this attempt to find a path from both our "start" and "end" cells
+## Translate a movement request into a path finding one by looking up the current cell.
+## this will always use the cell of the current position as the starting point which
+## can sometimes cause us to proceed to the next cell only to promptly turn back around.
+## this should probably make some attempt to identify if we are
+## already heading in the direction of our new goal or if we need to turn around.
+
+move_request_system : ECS -> ECS
+move_request_system = |ecs|
+  dict = get_by_component ecs [MoveRequest, Position]
+  Dict.walk dict ecs |accum, id, comp|
+      when comp is
+        [MoveRequest { destination }, Position point] ->
+          from_cell = PointyHex.pixel_to_hex point
+          {
+            accum&
+            move_requests: Dict.remove accum.move_requests id,
+            path_requests:
+              Dict.insert accum.path_requests id { start: from_cell, goal: destination }
+          }
+        _ -> accum
+
+## path_request_system(ecs, path_finder)
+## handle path finding
+## smoothly transition current movemennt to match the new path
+path_request_system : ECS, PathFinder -> ECS
+path_request_system = |ecs, path_finder|
+  dict = get_by_component ecs [PathRequest, Occupies]
+  Dict.walk dict ecs |accum, id, components|
+      when components is
+        [PathRequest { start, goal }, Occupies _] ->
+            curr_path = Dict.get accum.paths id |> Result.map_ok .path |> Result.with_default []
+            # path find to our new goal
+            new_path = path_finder(start, goal)
+            # get the *next* cell (second element) for
+            # the previous path
+            prev = List.get(curr_path, 1) ?? start
+            # and the next one
+            next = List.get(new_path, 1)  ?? start
+            curr_segment = Dict.get accum.move_segments id
+            (path0, new_segment) =
+              # are we currently moving?
+              when curr_segment is
+                ## no. kick off the new move_segment
+                Err _ -> (new_path, {
+                    rate: 0.7,
+                    progress: 0,
+                    start: PointyHex.hex_to_pixel start,
+                    end: PointyHex.hex_to_pixel next
+                  })
+                ## yes we are moving so we need to cleanly handle reversing directions
+                ## when necessary
+                Ok segment ->
+                  ## where did you come from?
+                  start_cell = PointyHex.pixel_to_hex segment.start
+                  ## where did you go?
+                  end_cell = PointyHex.pixel_to_hex segment.end
+                  ## is the next cell for our new path the one we are currently leaving?
+                  if start_cell == start && next != end_cell then
+                    ## yes --
+                    ## so prepend the previous end cell to our new path
+                    (List.prepend new_path end_cell,
+                    ## and reverse direction, position and progress
+                    { start: segment.end, end: segment.start, progress: 1 - segment.progress, rate: segment.rate})
+
+                  ## the next cell in our new path is the same as our previous one
+                  ## lucky us
+                  else if next == end_cell then
+                    ## so we can re-use the existing segment
+                    (new_path, segment)
+                  else
+                    ## we have new plans -- re-use the existing segment so we continue heading to our previous destination
+                    ## and prepend that to the path list
+                    (List.prepend new_path prev, segment)
+            {accum &
+              path_requests: Dict.remove accum.path_requests id,
+              move_segments: Dict.insert accum.move_segments id new_segment,
+              paths: Dict.insert accum.paths id { path: path0 }
+            }
+        _ -> accum
+
+move_to : ECS, I32, Hex.Doubled -> ECS
+move_to = |ecs, id, to| {ecs &
+    move_requests: Dict.insert ecs.move_requests id {destination: to}
+}
+
+move_segment_system : ECS, _, _ -> ECS
+move_segment_system = |ecs, dt_, get_cost|
+  dt = Num.to_f64 dt_ |> Num.div 1000 |> Num.to_f32
+  get_by_component ecs [Path, MoveSegment, Occupies]
+  |> Dict.walk ecs |accum, id, component|
+    when component is
+      [Path { path }, MoveSegment { start, end, progress, rate }, Occupies { cell, army }] ->
+        position = Hex.pointLerp(start, end, progress_)
+        cost = get_cost cell
+        progress_ = progress + dt * (rate / cost)
+        pos_cell = PointyHex.pixel_to_hex position
+        if progress_ >= 1 then
+            when path is
+                [_, _] | [_] | [] ->
+                    { accum &
+                        move_segments: Dict.remove accum.move_segments id,
+                        paths: Dict.remove accum.paths id,
+                        positionable: Dict.insert accum.positionable id position,
+                    }
+                [_, to, next, ..] ->
+                    {accum&
+                        paths: Dict.insert accum.paths id { path: (List.drop_first path 1) },
+                        move_segments: Dict.insert accum.move_segments id {
+                            start: PointyHex.hex_to_pixel to,
+                            end: PointyHex.hex_to_pixel next,
+                            rate,
+                            progress: 0,
+                        },
+                    }
+        else
+            {accum&
+                positionable: Dict.insert accum.positionable id position,
+                occupants: Dict.insert accum.occupants id { cell: pos_cell, army },
+                move_segments: Dict.insert accum.move_segments id {
+                  start, end, progress: progress_, rate,
+                },
+            }
+      _ ->
+        dbg "W.T.F? ${Inspect.to_str id}"
+        accum
+
+movement_system : ECS, U64 -> ECS
+movement_system = |ecs, dt|
+    dt_ = Num.to_f32 dt
+    # helper = movement_helper dt_
+    { ecs&
+      positionable: get_by_component ecs [Position, Moveable]
+        |> Dict.walk ecs.positionable |accum, id, component|
+          when component is
+            [Position { x, y }, Moveable { dx, dy }] ->
+              Dict.insert accum id { x: x + dx * dt_, y: y + dy * dt_ }
+            _ -> accum
+    }
 transform_system : ECS -> ECS
 transform_system = |ecs|
   components = get_by_component ecs [Position, Graphics, Transform]
@@ -272,7 +456,6 @@ transform_system = |ecs|
         _ -> updates
   { ecs & transformable: transforms }
 
-
 # attack_system : ECS -> ECS
 # attack_system = |ecs|
 #   attack_orders = Dict.to_list ecs.occupants
@@ -284,7 +467,6 @@ transform_system = |ecs|
 #             |> Result.try |neighbor| if neighbor.army != occupant.army then Ok({ target: neighbor, target_id: neighbor_id }) else Err KeyNotFound
 #         |> List.first
 #         |> Result.map_ok |{ target, target_id }| { id, target, target_id }
-
 #   { ecs & attack_orders }
 
 
@@ -299,7 +481,7 @@ kill_system = |ecs|
   removals = Dict.to_list ecs.killable |> List.keep_oks |(id, { dead_frame })|
     if dead_frame > 0 then Err Alive
     else Ok { id }
-  {ecs & removals }
+  {ecs & removals}
 
 
 # scaling_system : ECS -> ECS
@@ -332,12 +514,33 @@ emitter_system = |ecs|
     spawn world { position, num_particles: explosion.num_particles, lifetime }
   |> |world| { world & emissions: [] }
 
-map2 : Dict k a, Dict k b, (a, b -> c) -> Dict k c
-map2 = |dict1, dict2, f|
-  Dict.to_list dict1
-      |> List.keep_oks |(k, a)|
-        Dict.get(dict2, k) |> Result.map_ok |b| (k, f(a, b))
-      |> Dict.from_list
+# map2 : Dict k a, Dict k b, (a, b -> c) -> Dict k c
+# map2 = |dict1, dict2, f|
+#   Dict.to_list dict1
+#       |> List.keep_oks |(k, a)|
+#         Dict.get(dict2, k) |> Result.map_ok |b| (k, f(a, b))
+#       |> Dict.from_list
+
+routing_system : ECS, PathFinder -> ECS
+routing_system = |ecs, path_finder|
+    is_occupied = |test_cell|
+        Dict.walk_until ecs.occupants Bool.false |state, id, {cell}|
+          if test_cell == cell then Break Bool.true
+          else Continue state
+    get_by_component ecs [Path, Occupies]
+    |> Dict.walk ecs |accum, id, c|
+            when c is
+                [Path { path }, Occupies { cell }] ->
+                    when path is
+                        [.., dest] ->
+                            if dest != cell && is_occupied dest then
+                                move_to accum id dest
+                                |> |ecs_| {ecs_ &
+                                }
+                            else accum
+                        _ -> accum
+                _ -> accum
+
 
 
 removal_system = |ecs|
@@ -345,7 +548,7 @@ removal_system = |ecs|
       remove_entity accum removal.id
   |> |ecs1| { ecs1 & removals: [] }
 
-update = |model, dt|
+update = |model, dt, path_finder, cost_fn|
   {
     model &
     ecs: movement_system model.ecs dt
@@ -356,6 +559,10 @@ update = |model, dt|
       |> removal_system
       |> lifetime_system
       |> transform_system
+      |> move_request_system
+      |> path_request_system path_finder
+      |> move_segment_system dt cost_fn
+      # |> routing_system path_finder
       # |> |ecs|
       #   if ecs.current_size == 0 then
       #     spawn(ecs, { position: { x: 48, y: -92 }, num_particles:  1, max_lifetime: 180 })

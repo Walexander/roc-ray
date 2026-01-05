@@ -102,6 +102,7 @@ init! = |{}|
     baseState : YearOfDecision
     baseState = Model.initialize({
         camera,
+        seed: Effect.random_i32! 1 10_000,
         textures,
         render_textures,
         shaders,
@@ -134,7 +135,14 @@ render! = |model, pf|
         model.selectedCell
 
     rand = Random.step model.rand Random.bounded_u32(0, 1_000_000)
-    player_move_ = GameActions.inputs_to_move(model, isOccupied, unit_from_cell, mouse_world, pf.keys, pf.mouse.buttons)
+    player_move_ = GameActions.inputs_to_move(
+        model,
+        isOccupied,
+        unit_from_cell,
+        mouse_world,
+        pf.keys,
+        pf.mouse.buttons
+    )
     summary_unit = List.find_first(model.units, |unit| unit.id == model.selectedIndex)
         |> Result.on_err |_| List.first model.units
         |> |result|
@@ -147,7 +155,7 @@ render! = |model, pf|
         |> Trauma.process_trauma player_move_
         |> LaunchStatus.update
         |> LaunchCountdown.update(Num.to_u32 dt)
-        |> Particle.update dt
+        |> Particle.update dt path_finder HexTile.get_movement_cost(model.map)
         |> Movement.update(dt, isOccupied, path_finder)
         |> GameActions.update!(player_move_, path_finder)
         |> Health.update
@@ -201,16 +209,20 @@ render! = |model, pf|
             Hover Cell: ${ Inspect.to_str hover_cell }
             Hover Cell pixel: ${ Inspect.to_str(PointyHex.hex_to_pixel hover_cell) }
             Countdown = ${model.countdown |> Num.to_str}
-            Pct=${countdown_pct |> Num.mul 100 |> to_fixed 0}%, Seed = ${model.seed |> Num.to_str}; A=${intensity|>to_fixed 3}
+            Pct=${countdown_pct |> Num.mul 100 |> to_fixed 0}%,
+            Seed = ${model.seed |> Num.to_str};
+            A=${intensity|>to_fixed 3}
             Trauma=${model.trauma |> to_fixed 3}
         """
 
     bg_color = RGBA 64 64 64 255
-    debug_mode = Keys.down pf.keys KeyLeftShift
+    debug_mode = Keys.down pf.keys KeyLeftControl
     Draw.draw! bg_color |{}|
         render_map! world visible_cells new_settings debug_mode
         render_game! world  pf path_finder
-        render_trauma_bar! world.trauma intensity
+        if Keys.down pf.keys KeyLeftShift then
+            render_trauma_bar! world.trauma intensity
+        else {}
         render_debug! world  pf.mouse.position pf.keys debugText
 
     render_sound! world player_move_
@@ -267,7 +279,7 @@ render_fog! = |model|
     Draw.with_blend_mode! Multiplied |{}|
         Draw.with_mode_shader! model.shaders.fog.shader |{}|
             Shader.set_vec2! model.shaders.fog "texelSize" fog_texel_size
-                |> Shader.set_f32! "blurStrength" 1.5
+                |> Shader.set_f32! "blurStrength" 3.5
                 |> \_ -> {}
             Draw.render_texture_pro!({
                 texture: model.render_textures.fog,
@@ -318,8 +330,16 @@ render_debug! = |model, mouse_pos, keys, debug_text|
             x: screen.width - (Num.to_f32 debug_text_dims.x) - 48,
             y: screen.height - (Num.to_f32 debug_text_dims.y) - 24
         }
-        Draw.text! {
-            pos: debug_pos, text: debug_text, size: 16, color: White }
+        Draw.rectangle! {
+            rect: {
+                x: debug_pos.x - 4,
+                y: debug_pos.y - 4,
+                width: debug_text_dims.x + 12,
+                height: debug_text_dims.y + 8,
+            },
+            color: RocRay.fade(Black, 0.75),
+        }
+        Draw.text! { pos: debug_pos, text: debug_text, size: 16, color: White }
     else
         {}
 render_particle_debug! = |{x, y, scale, dead_frame, lifetime}|
@@ -463,6 +483,7 @@ render_game! = |model, pf, path_finder|
 
            render_countdown!(model.countdown, countdown_color)
            render_particles! model.ecs model.shaders.particle model.textures.empty debug_mode
+           render_system! model.ecs
     )
                     # )
     {}
@@ -738,6 +759,46 @@ drawHex! = |cell, texture, pos, tint|
             height: PointyHex.vertical_spacing * 2,
         },
     }
+
+render_system! : Particle.ECS => {}
+render_system! = |ecs|
+    Particle.get_by_component ecs [Position, Renderable]
+    |> Dict.values
+    |> List.for_each! |component|
+        when component is
+            [Position { x, y }, Renderable render] ->
+                when render is
+                    Texture { texture, origin, source, scale } ->
+                        width = source.width * scale.x
+                        height = source.height * scale.y
+                        Draw.texture_pro! {
+                            dest: {
+                                x: x - width / 2 - 2,
+                                y: y - height / 2 - 2,
+                                width: width + 4,
+                                height: height + 4,
+                            },
+                            origin,
+                            source,
+                            texture,
+                            rotation: 0,
+                            tint: Teal,
+                        }
+                        Draw.texture_pro! {
+                            dest: {
+                                x: x - width / 2,
+                                y: y - height / 2,
+                                width,
+                                height,
+                            },
+                            origin,
+                            source,
+                            texture,
+                            rotation: 0,
+                            tint: White,
+                        }
+                    _ -> {}
+            _ -> {}
 drawUnit! : Unit, RocRay.Texture, Bool => _
 drawUnit! = |unit, texture, selected|
     point = Hex.addPoint unit.position { x: 0, y: 0 }

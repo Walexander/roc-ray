@@ -44,7 +44,8 @@ updateMovement = |unit, map, dt_|
                 position = PointyHex.hex_to_pixel cell
                 updated = when unit.lastPath is
                     [_, _] | [_] | [] -> { unit & position, cell, lastPath: [], readiness: Cooldown(unit.cooldownRate |> Num.round) }
-                    [_, to, next, ..] -> {unit &
+                    [_, to, next, ..] -> {
+                        unit &
                         cell: to,
                         position: PointyHex.hex_to_pixel to,
                         lastPath: List.drop_first unit.lastPath 1,

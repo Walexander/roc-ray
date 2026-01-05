@@ -1,6 +1,5 @@
 module [ Army, Orders, YearOfDecision, initialize ]
 import rr.RocRay exposing [ Camera, Vector2 ]
-import rr.Effect
 import rr.Shader
 import Unit exposing [Unit]
 import HexTile exposing [HexMap]
@@ -8,6 +7,7 @@ import Hex exposing [ doubled, Doubled ]
 import Noise
 import Animation exposing [Animation]
 import Particle
+import PointyHex
 import rand.Random
 
 Army : [Union, Confederates]
@@ -29,8 +29,6 @@ YearOfDecision : {
     frameCount : U64,
     ai_army: Army,
     ai_intents: Dict Unit.Id Orders,
-    # inputs : (W4.Gamepad, W4.Gamepad),
-    # lastInputs : (W4.Gamepad, W4.Gamepad),
     game_time: U64,
     selectedIndex: I8,
     border: List Doubled,
@@ -51,7 +49,6 @@ YearOfDecision : {
     launch_state: [InControl Army, Stalemate],
     animations: Dict Doubled Animation,
     glowing: [Running (Doubled, Animation), Following(Unit, Animation), None],
-
     textures: {
         full_tiles: RocRay.Texture,
         top_tiles: RocRay.Texture,
@@ -76,9 +73,7 @@ YearOfDecision : {
     ecs: Particle.ECS,
 }
 
-initialize =  |{ camera, textures, render_textures, shaders, sounds, base_camera }|
-    seed = Effect.random_i32! 1 10000
-
+initialize =  |{ seed, camera, textures, render_textures, shaders, sounds, base_camera }|
     noise_fn = Noise.seeded_perlin2d seed
     map = HexTile.init(doubled(-12, -4), doubled(12, 4), noise_fn)
 
@@ -89,7 +84,22 @@ initialize =  |{ camera, textures, render_textures, shaders, sounds, base_camera
                 Ok u -> u.id
                 Err _ -> crash "units must be non-empty list"
     rand = Random.seed (seed |> Num.to_u32)
+    renderable: Particle.CompRender
+    renderable = Texture {
+        texture: textures.units,
+        source: { width: 40, height: 62, x: 0, y: 0 },
+        origin: { x: 0, y: 0 },
+        scale: { x: 0.3, y: 0.3870 },
+    }
+    entity : List Particle.ComponentData
+    entity = [
+        Occupies { cell: Hex.doubled -9 -1, army: Union },
+        Position(PointyHex.hex_to_pixel(Hex.doubled -9 -1)),
+        Renderable renderable,
+        MoveRequest { destination: Hex.doubled(2, 0), }
+    ]
     countdown = 20_000
+
     {
         game_time: 0,
         ai_army: Confederates,
@@ -118,5 +128,8 @@ initialize =  |{ camera, textures, render_textures, shaders, sounds, base_camera
         launch_state: Stalemate,
         textures,
         render_textures,
-        ecs: Particle.make rand |> Particle.spawn({position: { x: 16, y: -64 }, num_particles: 16 }),
+        ecs: Particle.make rand
+            |> Particle.spawn({position: { x: 16, y: -64 }, num_particles: 16 })
+            |> Particle.add entity
+
     }
