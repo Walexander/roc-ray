@@ -28,20 +28,17 @@ MoveUnitData : {
   to: Hex.Doubled
 }
 
-
-inputs_to_move : YearOfDecision, _, _, _, _, _ -> PlayerMove
-inputs_to_move = |model, is_occupied, unit_from_cell, hover_coords, keys, buttons|
+inputs_to_move = |model, pf, is_occupied, unit_from_cell, hover_coords, debug_mode|
+  keys = pf.keys
+  buttons = pf.mouse.buttons
   if Mouse.pressed buttons.left then
     hover_cell = PointyHex.pixel_to_hex(hover_coords)
-    if Keys.down keys KeyLeftShift then
-      terrain = HexTile.get_terrain model.map hover_cell
-      ToggleTerrain hover_cell (HexTile.next_terrain terrain)
-    else if (is_occupied hover_cell) then
+    if (is_occupied hover_cell) then
       (unit_from_cell hover_cell)
         |> Result.map_ok(\u -> SelectUnit u.id)
         |> Result.with_default NoMove
     else if hover_cell == model.hoverCell then
-      if Keys.down keys KeyLeftControl then
+      if debug_mode then
         OrderMove { id: 2, to: hover_cell }
       else
         MoveUnit { unit_index: model.selectedIndex, to: hover_cell }

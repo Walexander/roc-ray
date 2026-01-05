@@ -522,9 +522,9 @@ emitter_system = |ecs|
 #       |> Dict.from_list
 
 routing_system : ECS, PathFinder -> ECS
-routing_system = |ecs, path_finder|
+routing_system = |ecs, _|
     is_occupied = |test_cell|
-        Dict.walk_until ecs.occupants Bool.false |state, id, {cell}|
+        Dict.walk_until ecs.occupants Bool.false |state, _, {cell}|
           if test_cell == cell then Break Bool.true
           else Continue state
     get_by_component ecs [Path, Occupies]

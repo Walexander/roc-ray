@@ -87,12 +87,13 @@ initialize =  |{ seed, camera, textures, render_textures, shaders, sounds, base_
     renderable: Particle.CompRender
     renderable = Texture {
         texture: textures.units,
-        source: { width: 40, height: 62, x: 0, y: 0 },
+        source: { width: 40, height: 62, x: 40, y: 62 },
         origin: { x: 0, y: 0 },
-        scale: { x: 0.3, y: 0.3870 },
+        # scale: { x: 0.3, y: 0.3870 },
+        scale: { x: 0.5, y: 1.29 * 0.5 }
     }
-    entity : List Particle.ComponentData
-    entity = [
+    single_test_unit : List Particle.ComponentData
+    single_test_unit = [
         Occupies { cell: Hex.doubled -9 -1, army: Union },
         Position(PointyHex.hex_to_pixel(Hex.doubled -9 -1)),
         Renderable renderable,
@@ -130,6 +131,6 @@ initialize =  |{ seed, camera, textures, render_textures, shaders, sounds, base_
         render_textures,
         ecs: Particle.make rand
             |> Particle.spawn({position: { x: 16, y: -64 }, num_particles: 16 })
-            |> Particle.add entity
+            |> Particle.add single_test_unit
 
     }

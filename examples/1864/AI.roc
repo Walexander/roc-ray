@@ -23,11 +23,11 @@ update = |world, path_finder, is_occupied|
   {
     world &
     ai_intents: orders,
-    units: process_orders(world.units, orders, is_occupied, path_finder)
+    units: process_orders(world.units, orders, path_finder)
   }
 
-process_orders : List Unit.Unit, _, _, _ -> List Unit.Unit
-process_orders = |units, orders, is_occupied, path_finder|
+process_orders : List Unit.Unit, _, _ -> List Unit.Unit
+process_orders = |units, orders, path_finder|
   List.map units |unit|
     Dict.get(orders, unit.id)
       |> Result.try |order|

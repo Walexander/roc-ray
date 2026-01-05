@@ -6,19 +6,12 @@ module [
     aStar,
     astar,
 ]
-import PriorityQueue exposing [PriorityQueue]
+import PriorityQueue
 ## Graph type representing a graph as a dictionary of adjacency lists,
 ## where each key is a vertex and each value is a list of its adjacent vertices.
 Graph a := Dict a (List a) where a implements Eq
 
 Graph2 a : a -> Result (List a) [NotFound] where a implements Eq
-
-fromList2 : List (a, List a) -> Graph2 a
-fromList2 = \adjacencyList ->
-    \a ->
-        List.find_first adjacencyList \(b, _) -> b == a
-        |> Result.map_ok  \tuple -> tuple.1
-        |> Result.map_err \_ -> NotFound
 
 ## Create a Graph from an adjacency list.
 fromList : List (a, List a) -> Graph a
