@@ -84,20 +84,21 @@ initialize =  |{ seed, camera, textures, render_textures, shaders, sounds, base_
                 Ok u -> u.id
                 Err _ -> crash "units must be non-empty list"
     rand = Random.seed (seed |> Num.to_u32)
-    renderable: Particle.CompRender
-    renderable = Texture {
+    source = { width: 40, height: 62, x: 40, y: 62 }
+    renderable = {
         texture: textures.units,
-        source: { width: 40, height: 62, x: 40, y: 62 },
         origin: { x: 0, y: 0 },
+        source,
         # scale: { x: 0.3, y: 0.3870 },
-        scale: { x: 0.5, y: 1.29 * 0.5 }
+        scale: { x: 0.5, y: 1.29 * 0.5 },
+        flip: None,
     }
     single_test_unit : List Particle.ComponentData
     single_test_unit = [
         Occupies { cell: Hex.doubled -9 -1, army: Union },
         Position(PointyHex.hex_to_pixel(Hex.doubled -9 -1)),
-        Renderable renderable,
-        MoveRequest { destination: Hex.doubled(2, 0), }
+        Renderable Texture(renderable),
+        MoveRequest { destination: Hex.doubled(4, 2), }
     ]
     countdown = 20_000
 
@@ -132,5 +133,12 @@ initialize =  |{ seed, camera, textures, render_textures, shaders, sounds, base_
         ecs: Particle.make rand
             |> Particle.spawn({position: { x: 16, y: -64 }, num_particles: 16 })
             |> Particle.add single_test_unit
+            |> Particle.add [
+                Occupies { cell: Hex.doubled -8 2, army: Union },
+                Position PointyHex.hex_to_pixel(Hex.doubled -8 2),
+                Renderable Texture({ renderable & flip: FlipY,scale: {x: 1, y: 1 }, }),
+
+                MoveRequest { destination: Hex.doubled(3, 1) }
+            ]
 
     }

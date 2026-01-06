@@ -1,7 +1,10 @@
+module [
+    load!,
+    update_from_image!,
+    from_image!, get_format!, PixelFormat]
 ## A static image loaded into GPU memory, typically from a file. Once loaded, it can be used
 ## multiple times for efficient rendering. Cannot be modified after creation - for dynamic
 ## textures that can be drawn to, see [RenderTexture] instead.
-module [load!, update_from_image!, from_image!, get_format!, PixelFormat]
 
 import Effect
 import RocRay exposing [Texture]

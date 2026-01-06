@@ -4,6 +4,7 @@ import rr.RocRay exposing [Color ]
 import Hex
 import rand.Random
 import PointyHex
+import HexTile
 import Matrix4 exposing [Matrix4]
 
 Entity : {
@@ -77,6 +78,7 @@ CompOccupies : {
 }
 CompPath : {
   path: List Hex.Doubled,
+  goal: Hex.Doubled
 }
 
 AttackOrders : {
@@ -90,6 +92,7 @@ CompRender : [
     source: RocRay.Rectangle,
     origin: RocRay.Vector2,
     scale: RocRay.Vector2,
+    flip: [FlipX, FlipY, FlipBoth, None],
   }
 ]
 Components : [
@@ -309,6 +312,11 @@ remove_entity = |ecs, id| {
 move_request_system : ECS -> ECS
 move_request_system = |ecs|
   dict = get_by_component ecs [MoveRequest, Position]
+  size = Dict.len dict
+  _ = if size > 0 then
+     dbg "processing ${Inspect.to_str size} move requests"
+  else
+      ""
   Dict.walk dict ecs |accum, id, comp|
       when comp is
         [MoveRequest { destination }, Position point] ->
@@ -333,51 +341,56 @@ path_request_system = |ecs, path_finder|
             curr_path = Dict.get accum.paths id |> Result.map_ok .path |> Result.with_default []
             # path find to our new goal
             new_path = path_finder(start, goal)
-            # get the *next* cell (second element) for
-            # the previous path
-            prev = List.get(curr_path, 1) ?? start
-            # and the next one
-            next = List.get(new_path, 1)  ?? start
-            curr_segment = Dict.get accum.move_segments id
-            (path0, new_segment) =
-              # are we currently moving?
-              when curr_segment is
-                ## no. kick off the new move_segment
-                Err _ -> (new_path, {
-                    rate: 0.7,
-                    progress: 0,
-                    start: PointyHex.hex_to_pixel start,
-                    end: PointyHex.hex_to_pixel next
-                  })
-                ## yes we are moving so we need to cleanly handle reversing directions
-                ## when necessary
-                Ok segment ->
-                  ## where did you come from?
-                  start_cell = PointyHex.pixel_to_hex segment.start
-                  ## where did you go?
-                  end_cell = PointyHex.pixel_to_hex segment.end
-                  ## is the next cell for our new path the one we are currently leaving?
-                  if start_cell == start && next != end_cell then
-                    ## yes --
-                    ## so prepend the previous end cell to our new path
-                    (List.prepend new_path end_cell,
-                    ## and reverse direction, position and progress
-                    { start: segment.end, end: segment.start, progress: 1 - segment.progress, rate: segment.rate})
+            if List.len new_path <= 0 then
+              accum
+            else
+              # get the *next* cell (second element) for
+              # the previous path
+              prev = List.get(curr_path, 1) ?? start
+              # and the next one
+              next = List.get(new_path, 1)  ?? start
+              curr_segment = Dict.get accum.move_segments id
+              (path0, new_segment) =
+                # are we currently moving?
+                when curr_segment is
+                  ## no. kick off the new move_segment
+                  Err _ -> (new_path, {
+                      rate: 0.7,
+                      progress: 0,
+                      start: PointyHex.hex_to_pixel start,
+                      end: PointyHex.hex_to_pixel next
+                    })
+                  ## yes we are moving so we need to cleanly handle reversing directions
+                  ## when necessary
+                  Ok segment ->
+                    ## where did you come from?
+                    start_cell = PointyHex.pixel_to_hex segment.start
+                    ## where did you go?
+                    end_cell = PointyHex.pixel_to_hex segment.end
+                    ## is the next cell for our new path the one we are currently leaving?
+                    if start_cell == start && next != end_cell then
+                      ## yes --
+                      ## so prepend the previous end cell to our new path
+                      (List.prepend new_path end_cell,
+                      ## and reverse direction, position and progress
+                      { start: segment.end, end: segment.start, progress: 1 - segment.progress, rate: segment.rate})
 
-                  ## the next cell in our new path is the same as our previous one
-                  ## lucky us
-                  else if next == end_cell then
-                    ## so we can re-use the existing segment
-                    (new_path, segment)
-                  else
-                    ## we have new plans -- re-use the existing segment so we continue heading to our previous destination
-                    ## and prepend that to the path list
-                    (List.prepend new_path prev, segment)
-            {accum &
-              path_requests: Dict.remove accum.path_requests id,
-              move_segments: Dict.insert accum.move_segments id new_segment,
-              paths: Dict.insert accum.paths id { path: path0 }
-            }
+                    ## the next cell in our new path is the same as our previous one
+                    ## lucky us
+                    else if next == end_cell then
+                      ## so we can re-use the existing segment
+                      (new_path, segment)
+                    else
+                      ## we have new plans -- re-use the existing segment so we continue heading to our previous destination
+                      ## and prepend that to the path list
+                      (List.prepend new_path prev, segment)
+              dbg "moving from ${Inspect.to_str start} --> ${Inspect.to_str goal} in ${List.len path0 |> Inspect.to_str} steps"
+              {accum &
+                path_requests: Dict.remove accum.path_requests id,
+                move_segments: Dict.insert accum.move_segments id new_segment,
+                paths: if List.len path0 > 0 then Dict.insert accum.paths id { goal, path: path0 } else accum.paths,
+
+              }
         _ -> accum
 
 move_to : ECS, I32, Hex.Doubled -> ECS
@@ -391,7 +404,7 @@ move_segment_system = |ecs, dt_, get_cost|
   get_by_component ecs [Path, MoveSegment, Occupies]
   |> Dict.walk ecs |accum, id, component|
     when component is
-      [Path { path }, MoveSegment { start, end, progress, rate }, Occupies { cell, army }] ->
+      [Path { goal, path }, MoveSegment { start, end, progress, rate }, Occupies { cell, army }] ->
         position = Hex.pointLerp(start, end, progress_)
         cost = get_cost cell
         progress_ = progress + dt * (rate / cost)
@@ -406,7 +419,7 @@ move_segment_system = |ecs, dt_, get_cost|
                     }
                 [_, to, next, ..] ->
                     {accum&
-                        paths: Dict.insert accum.paths id { path: (List.drop_first path 1) },
+                        paths: Dict.insert accum.paths id { goal, path: (List.drop_first path 1) },
                         move_segments: Dict.insert accum.move_segments id {
                             start: PointyHex.hex_to_pixel to,
                             end: PointyHex.hex_to_pixel next,
@@ -521,23 +534,17 @@ emitter_system = |ecs|
 #         Dict.get(dict2, k) |> Result.map_ok |b| (k, f(a, b))
 #       |> Dict.from_list
 
-routing_system : ECS, PathFinder -> ECS
-routing_system = |ecs, _|
-    is_occupied = |test_cell|
-        Dict.walk_until ecs.occupants Bool.false |state, _, {cell}|
-          if test_cell == cell then Break Bool.true
-          else Continue state
+# routing_system : ECS, (Hex.Doubled -> Bool) -> ECS
+routing_system = |ecs, is_occupied|
     get_by_component ecs [Path, Occupies]
     |> Dict.walk ecs |accum, id, c|
             when c is
-                [Path { path }, Occupies { cell }] ->
+                [Path { path, goal }, Occupies { cell }] ->
                     when path is
-                        [.., dest] ->
-                            if dest != cell && is_occupied dest then
-                                move_to accum id dest
-                                |> |ecs_| {ecs_ &
-                                }
-                            else accum
+                        [_, dest, ..] if dest != cell && is_occupied dest ->
+                          dbg "Re-routing entity[${Inspect.to_str id}] ${Inspect.to_str cell} --> ${Inspect.to_str dest} to ${Inspect.to_str goal}"
+                          move_to accum id goal
+                          |> |ecs_| {ecs_ & }
                         _ -> accum
                 _ -> accum
 
@@ -548,12 +555,22 @@ removal_system = |ecs|
       remove_entity accum removal.id
   |> |ecs1| { ecs1 & removals: [] }
 
-update = |model, dt, path_finder, cost_fn|
+
+update = |model, dt, is_blocked, cost_fn|
+  occupants = Dict.values model.ecs.occupants
+  is_occupied = |test_cell|
+      List.walk_until occupants Bool.false |_, {cell}|
+        if test_cell == cell || is_blocked cell then
+          Break Bool.true
+        else
+          Continue Bool.false
+
+  path_finder = HexTile.make_path_finder model.map is_occupied
+
   {
     model &
     ecs: movement_system model.ecs dt
       |> kill_system
-      # |> scaling_system
       |> explode_system
       |> emitter_system
       |> removal_system
@@ -562,10 +579,5 @@ update = |model, dt, path_finder, cost_fn|
       |> move_request_system
       |> path_request_system path_finder
       |> move_segment_system dt cost_fn
-      # |> routing_system path_finder
-      # |> |ecs|
-      #   if ecs.current_size == 0 then
-      #     spawn(ecs, { position: { x: 48, y: -92 }, num_particles:  1, max_lifetime: 180 })
-      #     # |> spawn { position: { x: 16, y: 64 }, num_particles:  16, max_lifetime: 30 }
-      #   else ecs
+      |> routing_system is_occupied
   }

@@ -46,7 +46,9 @@ base_camera = {
     zoom: 1.125,
     rotation: 0
 }
-fog_scale = 0.25
+fog_scale = 0.5
+fog_texel_size = { x: 1/( fog_scale * Num.to_f32(screen.width)), y: 1/(fog_scale * Num.to_f32(screen.height)) }
+
 init! : {} => Result YearOfDecision _
 init! = |{}|
     RocRay.set_target_fps! 60
@@ -193,7 +195,7 @@ update_world! = |model, pf, dt, player_move, path_finder, isOccupied, summary_un
         |> Trauma.process_trauma player_move
         |> LaunchStatus.update
         |> LaunchCountdown.update(Num.to_u32 dt)
-        |> Particle.update dt path_finder HexTile.get_movement_cost(model.map)
+        |> Particle.update dt isOccupied HexTile.get_movement_cost(model.map)
         |> Movement.update(dt, isOccupied, path_finder)
         |> GameActions.update!(player_move, path_finder)
         |> Health.update
@@ -257,9 +259,18 @@ render_game! = |model, path_finder, debug_mode|
     renderHexOutline! model.hoverCell White
 
     if debug_mode then
-        cube_path = path_finder summary_unit.cell model.hoverCell
-        straightLine = cube_path |> List.map |point| PointyHex.hex_to_pixel point
-        drawPath! straightLine RGBA(200, 200, 200, 255) 5 Bool.false
+        # cube_path = path_finder summary_unit.cell model.hoverCell
+        # straightLine = cube_path |> List.map |point| PointyHex.hex_to_pixel point
+        path = Dict.get model.ecs.paths 2
+            |> Result.map_ok .path
+            |> Result.with_default []
+            |> List.map |cell| PointyHex.hex_to_pixel cell
+            |> |p|
+                Dict.get model.ecs.positionable 2
+                |> Result.map_ok |pos| List.set p 0 pos
+                |> Result.with_default p
+
+        drawPath! path RGBA(200, 200, 200, 255) 5 Bool.false
     else
         {}
 
@@ -315,7 +326,6 @@ update_fog_map! = |model, visible_cells, shakey_cam|
     Camera.update!(model.camera, shakey_cam)
 
 
-fog_texel_size = { x: 1/( fog_scale * Num.to_f32(screen.width)), y: 1/(fog_scale * Num.to_f32(screen.height)) }
 ## TODO: scissor the top of this so it doesn't sit above our FPS indicator
 render_fog! = |model|
     Draw.with_blend_mode! Multiplied |{}|
@@ -739,31 +749,48 @@ render_system! = |ecs|
         when component is
             [Position { x, y }, Renderable render] ->
                 when render is
-                    Texture { texture, origin, source, scale } ->
-                        width = source.width * scale.x
-                        height = source.height * scale.y
-                        Draw.texture_pro! {
-                            dest: {
-                                x: x - width / 2 - 2,
-                                y: y - height / 2 - 2,
-                                width: width + 4,
-                                height: height + 4,
-                            },
-                            origin,
-                            source,
-                            texture,
-                            rotation: 0,
-                            tint: Teal,
+                    Texture { texture, flip, origin, source, scale } ->
+                        ## TODO: clean up this mess around scaling, flipping and padding
+                        scale0 = {
+                            x: if flip == FlipX || flip == FlipBoth then scale.x * -1 else scale.x,
+                            y: if flip == FlipX || flip == FlipBoth then scale.y * -1 else scale.y,
+                        }
+                        width = source.width * scale0.x
+                        height = source.height * scale0.y
+                        source0 = {source&
+                            width: if flip == FlipX || flip == FlipBoth then
+                                source.width * -1
+                            else source.width,
+                            height: if flip == FlipY || flip == FlipBoth then
+                                source.height * -1
+                            else source.height,
+                        }
+                        padding = {
+                            x: if flip == FlipX then -4 else 4,
+                            y: if flip == FlipY then -4 else 4,
                         }
                         Draw.texture_pro! {
                             dest: {
-                                x: x - width / 2,
-                                y: y - height / 2,
+                                x: x - Num.abs(width) / 2 - 2,
+                                y: y - Num.abs(height) / 2 - 2,
+                                width: width + padding.x,
+                                height: height + padding.y,
+                            },
+                            origin,
+                            source: source0,
+                            texture,
+                            rotation: 0,
+                            tint: Green,
+                        }
+                        Draw.texture_pro! {
+                            dest: {
+                                x: x - Num.abs(width) / 2,
+                                y: y - Num.abs(height) / 2,
                                 width,
                                 height,
                             },
                             origin,
-                            source,
+                            source: source0,
                             texture,
                             rotation: 0,
                             tint: White,
