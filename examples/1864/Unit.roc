@@ -1,7 +1,12 @@
-module [Unit, MoveChoice, Id, combatOrder, isAlive, takeHit, summary, reroute, make, moveTo, initial, updateReadiness]
+module [Unit, MoveChoice, Id,
+    combatOrder, isAlive, takeHit, summary, reroute, make, moveTo, initial,
+    updateReadiness,
+    spawn
+]
 import Hex exposing [Doubled, Point, doubled]
 import Utils exposing [frameCountToSeconds]
 import PointyHex
+import Particle
 import Health
 # import Assets
 # import w4.Sprite exposing [Sprite]
@@ -28,6 +33,30 @@ MoveChoice : [
     Destination Id Doubled (List Doubled),
     Finished,
 ]
+
+spawn = |ecs, { texture, type, army, cell }|
+    source = { x: 0, y: 0, width: 40, height: 65 }
+    source_ = when type is
+        Infantry -> { source & x: source.width * 0, y: source.height * 2 }
+        Cavalry -> { source & x: source.width * 1, y: source.height * 0 }
+        Artillery -> { source & x: source.width * 0, y: source.height * 0 }
+
+    renderable = {
+        texture,
+        origin: { x: 0, y: 0 },
+        source: source_,
+        scale: { x: 1.5, y: 1.5 },
+        tint: if army == Union  then Aqua else Silver,
+        flip: if army == Confederates then FlipX else None,
+    }
+    unit : List Particle.ComponentData
+    unit = [
+        Occupies { army, cell },
+        Position(PointyHex.hex_to_pixel cell),
+        Renderable (Texture renderable),
+    ]
+    Particle.add ecs unit
+
 make : _ -> Unit
 make = \{ type, id: inId, army, cell } ->
     position = PointyHex.hex_to_pixel cell

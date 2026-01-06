@@ -259,24 +259,36 @@ render_game! = |model, path_finder, debug_mode|
     renderHexOutline! model.hoverCell White
 
     if debug_mode then
-        # cube_path = path_finder summary_unit.cell model.hoverCell
-        # straightLine = cube_path |> List.map |point| PointyHex.hex_to_pixel point
-        path = Dict.get model.ecs.paths 2
-            |> Result.map_ok .path
-            |> Result.with_default []
-            |> List.map |cell| PointyHex.hex_to_pixel cell
-            |> |p|
-                Dict.get model.ecs.positionable 2
-                |> Result.map_ok |pos| List.set p 0 pos
-                |> Result.with_default p
 
-        drawPath! path RGBA(200, 200, 200, 255) 5 Bool.false
+        paths : List (List Hex.Point)
+        paths = []
+
+        Particle.get_by_component model.ecs [Position, Path]
+        |> Dict.walk paths |accum, _, comps|
+                when comps is
+                    [Position pos, Path { path }] ->
+                        List.map path |cell| PointyHex.hex_to_pixel cell
+                        |> List.set 0 pos
+                        |> |points| List.append accum points
+                    _ -> accum
+
+        |> List.for_each! |path|
+            drawPath! path RGBA(200, 200, 200, 255) 3 Bool.false
+
+        # path = Dict.map model.ecs.paths |id, { path }|
+        #     List.map path |cell| PointyHex.hex_to_pixel cell
+        #     |> |p|
+        #         Dict.get model.ecs.positionable 2
+        #         |> Result.map_ok |pos| List.set p 0 pos
+        #         |> Result.with_default p
+
+        # drawPath! path RGBA(200, 200, 200, 255) 5 Bool.false
     else
         {}
 
    render_countdown!(model.countdown, countdown_color)
-   render_particles! model.ecs model.shaders.particle model.textures.empty debug_mode
    render_system! model.ecs
+   render_particles! model.ecs model.shaders.particle model.textures.empty debug_mode
 
 render_map! = |model, visible_cells, shakey_cam, show_fog|
     Camera.update!(model.camera, shakey_cam)
@@ -749,7 +761,7 @@ render_system! = |ecs|
         when component is
             [Position { x, y }, Renderable render] ->
                 when render is
-                    Texture { texture, flip, origin, source, scale } ->
+                    Texture { texture, tint, flip, origin, source, scale } ->
                         ## TODO: clean up this mess around scaling, flipping and padding
                         scale0 = {
                             x: if flip == FlipX || flip == FlipBoth then scale.x * -1 else scale.x,
@@ -766,13 +778,13 @@ render_system! = |ecs|
                             else source.height,
                         }
                         padding = {
-                            x: if flip == FlipX then -4 else 4,
-                            y: if flip == FlipY then -4 else 4,
+                            x: if flip == FlipX then -8 else 8,
+                            y: if flip == FlipY then -8 else 8,
                         }
                         Draw.texture_pro! {
                             dest: {
-                                x: x - Num.abs(width) / 2 - 2,
-                                y: y - Num.abs(height) / 2 - 2,
+                                x: x - Num.abs(width) / 2 - Num.abs(padding.x) / 2,
+                                y: y - Num.abs(height) / 2 - Num.abs(padding.y) / 2,
                                 width: width + padding.x,
                                 height: height + padding.y,
                             },
@@ -780,21 +792,21 @@ render_system! = |ecs|
                             source: source0,
                             texture,
                             rotation: 0,
-                            tint: Green,
+                            tint,
                         }
-                        Draw.texture_pro! {
-                            dest: {
-                                x: x - Num.abs(width) / 2,
-                                y: y - Num.abs(height) / 2,
-                                width,
-                                height,
-                            },
-                            origin,
-                            source: source0,
-                            texture,
-                            rotation: 0,
-                            tint: White,
-                        }
+                        # Draw.texture_pro! {
+                        #     dest: {
+                        #         x: x - Num.abs(width) / 2,
+                        #         y: y - Num.abs(height) / 2,
+                        #         width,
+                        #         height,
+                        #     },
+                        #     origin,
+                        #     source: source0,
+                        #     texture,
+                        #     rotation: 0,
+                        #     tint: White,
+                        # }
                     _ -> {}
             _ -> {}
 drawUnit! : Unit, RocRay.Texture, Bool => _

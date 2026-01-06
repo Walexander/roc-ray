@@ -92,6 +92,7 @@ CompRender : [
     source: RocRay.Rectangle,
     origin: RocRay.Vector2,
     scale: RocRay.Vector2,
+    tint: RocRay.Color,
     flip: [FlipX, FlipY, FlipBoth, None],
   }
 ]
@@ -227,7 +228,7 @@ spawn = |ecs, { position ?? { x: 0, y: 0 }, num_particles ?? 0, max_lifetime ?? 
     moveable: Dict.insert ecs1.moveable id ( { dx: next_v.value.dx, dy: next_v.value.dy }),
   }
 
-add : ECS, List ComponentData -> ECS
+add : ECS, List ComponentData -> (I32, ECS)
 add = |ecs, components|
   ( ecs_, id ) = add_entity ecs
   List.walk components ecs_ |accum, component|
@@ -243,6 +244,7 @@ add = |ecs, components|
       MoveSegment segment -> {accum & move_segments: Dict.insert accum.move_segments id segment}
       Path path -> {accum & paths: Dict.insert accum.paths id path}
       Renderable render -> {accum & renderables: Dict.insert accum.renderables id render }
+  |> |ecs1| (id, ecs1)
       # Drawable data -> { accum& drawable: Dict.insert accum.drawable id data }
       # Pathable path -> {accum& pathable: Dict.insert accum.pathable id path }
 

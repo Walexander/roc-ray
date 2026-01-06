@@ -39,7 +39,7 @@ inputs_to_move = |model, pf, is_occupied, unit_from_cell, hover_coords, debug_mo
         |> Result.with_default NoMove
     else if hover_cell == model.hoverCell then
       if debug_mode then
-        OrderMove { id: 2, to: hover_cell }
+        OrderMove { id: 3, to: hover_cell }
       else
         MoveUnit { unit_index: model.selectedIndex, to: hover_cell }
     else
@@ -66,7 +66,6 @@ update! = |model, move, path_finder|
       model &
       trauma: Hex.lerp model.trauma 1 0.5,
       ecs: Particle.spawn(model.ecs, { position: PointyHex.hex_to_pixel model.hoverCell, num_particles: 0, max_lifetime: 180 })
-
     }
     ToggleTerrain cell terrain ->
       map = HexTile.toggle_terrain model.map cell terrain

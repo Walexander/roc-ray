@@ -84,14 +84,15 @@ initialize =  |{ seed, camera, textures, render_textures, shaders, sounds, base_
                 Ok u -> u.id
                 Err _ -> crash "units must be non-empty list"
     rand = Random.seed (seed |> Num.to_u32)
-    source = { width: 40, height: 62, x: 40, y: 62 }
+    source = { width: 40, height: 65, x: 40, y: 65 }
     renderable = {
         texture: textures.units,
         origin: { x: 0, y: 0 },
         source,
         # scale: { x: 0.3, y: 0.3870 },
-        scale: { x: 0.5, y: 1.29 * 0.5 },
+        scale: { x: 1.0, y: 1.0 },
         flip: None,
+        tint: Olive,
     }
     single_test_unit : List Particle.ComponentData
     single_test_unit = [
@@ -132,13 +133,21 @@ initialize =  |{ seed, camera, textures, render_textures, shaders, sounds, base_
         render_textures,
         ecs: Particle.make rand
             |> Particle.spawn({position: { x: 16, y: -64 }, num_particles: 16 })
+            |> Particle.spawn({position: PointyHex.hex_to_pixel Hex.doubled(-7, 3), num_particles: 6 })
             |> Particle.add single_test_unit
-            |> Particle.add [
-                Occupies { cell: Hex.doubled -8 2, army: Union },
-                Position PointyHex.hex_to_pixel(Hex.doubled -8 2),
-                Renderable Texture({ renderable & flip: FlipY,scale: {x: 1, y: 1 }, }),
-
-                MoveRequest { destination: Hex.doubled(3, 1) }
-            ]
-
+            |> .1
+            |> Unit.spawn {
+                texture: textures.units,
+                type: Infantry,
+                army: Union,
+                cell: Hex.doubled -8 2,
+            }
+            |> |(id, ecs0)| Particle.move_to ecs0 id Hex.doubled(3, 1)
+            |> Unit.spawn {
+                texture: textures.units,
+                type: Artillery,
+                army: Confederates,
+                cell: Hex.doubled 10 0,
+            }
+            |> |(id, ecs0)| Particle.move_to ecs0 id Hex.doubled(-2, 2)
     }
