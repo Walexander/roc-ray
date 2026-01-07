@@ -24,7 +24,7 @@ import Health
 import HexTile
 
 import Noise
-import Model exposing [ YearOfDecision ]
+import Model exposing [YearOfDecision]
 import Movement
 import Trauma
 import LaunchStatus
@@ -32,22 +32,21 @@ import LaunchCountdown
 import Animation
 import Particle
 
-
 Model : YearOfDecision
 
 screen = {
     width: 1024,
-    height: 768
+    height: 768,
 }
 
 base_camera = {
     target: { x: 0.0, y: 0 },
-    offset: {x: screen.width / 2, y: screen.height / 2 },
+    offset: { x: screen.width / 2, y: screen.height / 2 },
     zoom: 1.125,
-    rotation: 0
+    rotation: 0,
 }
 fog_scale = 0.5
-fog_texel_size = { x: 1/( fog_scale * Num.to_f32(screen.width)), y: 1/(fog_scale * Num.to_f32(screen.height)) }
+fog_texel_size = { x: 1 / (fog_scale * Num.to_f32(screen.width)), y: 1 / (fog_scale * Num.to_f32(screen.height)) }
 
 init! : {} => Result YearOfDecision _
 init! = |{}|
@@ -63,48 +62,55 @@ init! = |{}|
 
     power_up = Sound.load!("examples/1864/assets/power-up.mp3")?
     power_down = Sound.load!("examples/1864/assets/power-down.mp3")?
-    ok =  Sound.load!("examples/1864/assets/yessir.mp3")?
+    ok = Sound.load!("examples/1864/assets/yessir.mp3")?
     horse = Sound.load!("examples/1864/assets/horse.mp3")?
     wagon = Sound.load!("examples/1864/assets/wagon.mp3")?
 
     render_textures = {
-        fog: RenderTexture.create!({
-            width: screen.width * fog_scale,
-            height: screen.height * fog_scale,
-        })?
+        fog: RenderTexture.create!(
+            {
+                width: screen.width * fog_scale,
+                height: screen.height * fog_scale,
+            },
+        )?,
     }
     shaders = {
-        fog: Shader.new!("examples/1864/assets/shaders/default.vs",
+        fog: Shader.new!(
+            "examples/1864/assets/shaders/default.vs",
             "examples/1864/assets/shaders/fog-blur.frag",
-            ["texelSize", "blurStrength"])?,
+            ["texelSize", "blurStrength"],
+        )?,
         particle: Shader.new!(
             "examples/1864/assets/shaders/default.vs",
             "examples/1864/assets/shaders/explosion.frag",
-            [ "u_time", "u_duration",]
+            ["u_time", "u_duration"],
         )?,
-        ring: Shader.new!("examples/1864/assets/shaders/scale.vert",
+        ring: Shader.new!(
+            "examples/1864/assets/shaders/scale.vert",
             "examples/1864/assets/shaders/noop.frag",
-            ["time", "max", "center"]
+            ["time", "max", "center"],
         )?,
     }
     RenderTexture.set_render_texture_filter! render_textures.fog Bilinear
     image = RocRay.gen_image_color!(1, 1, White)?
     textures = {
-            empty: Texture.from_image!(image)?,
-            units,
-            top_tiles,
-            full_tiles: hexTexture
-        }
+        empty: Texture.from_image!(image)?,
+        units,
+        top_tiles,
+        full_tiles: hexTexture,
+    }
     baseState : YearOfDecision
-    baseState = Model.initialize({
-        camera,
-        seed: Effect.random_i32! 1 10_000,
-        textures,
-        render_textures,
-        shaders,
-        sounds: { power_up, power_down, ok, horse, wagon },
-        base_camera
-    })
+    baseState = Model.initialize(
+        {
+            camera,
+            seed: Effect.random_i32! 1 10_000,
+            textures,
+            render_textures,
+            shaders,
+            sounds: { power_up, power_down, ok, horse, wagon },
+            base_camera,
+        },
+    )
     Ok baseState
 
 render! : YearOfDecision, RocRay.PlatformState => Result YearOfDecision []
@@ -136,10 +142,18 @@ render! = |model, pf|
         model.selectedCell
 
     ## list of visible cells
-    visible_cells = model.units
-        |> List.drop_if |u| u.army == Confederates
-        |> List.join_map |unit| PointyHex.neighbors unit.cell |> List.append unit.cell
+    # visible_cells = model.units
+    #     |> List.drop_if |u| u.army == Confederates
+    #     |> List.join_map |unit| PointyHex.neighbors unit.cell |> List.append unit.cell
 
+    visible_cells =
+        model.ecs.occupants
+        |> Dict.keep_if |(_, { army })| army == Union
+        |> Dict.values
+        |> List.map .cell
+        |> List.join_map |cell|
+            PointyHex.neighbors cell
+            |> List.append cell
 
     player_move = GameActions.inputs_to_move(
         model,
@@ -147,23 +161,24 @@ render! = |model, pf|
         isOccupied,
         unit_from_cell,
         mouse_world,
-        debug_mode
+        debug_mode,
     )
-    summary_unit = List.find_first(model.units, |unit| unit.id == model.selectedIndex)
+    summary_unit =
+        List.find_first(model.units, |unit| unit.id == model.selectedIndex)
         |> Result.on_err |_| List.first model.units
         |> |result|
             when result is
                 Ok u -> u
                 Err _ -> crash "must have non empty unit list"
     ## !! Update World !!
-    world = {model&
-        game_time: model.game_time + dt,
-        rand: rand.state,
-        hoverCell: mouseCell2,
-        selectedCell
-    } |> update_world! pf dt player_move path_finder isOccupied summary_unit
-
-
+    world =
+        { model &
+            game_time: model.game_time + dt,
+            rand: rand.state,
+            hoverCell: mouseCell2,
+            selectedCell,
+        }
+        |> update_world! pf dt player_move path_finder isOccupied summary_unit
 
     bg_color = RGBA 64 64 64 255
     ## get our shakey camera settings and the current intensity
@@ -172,12 +187,13 @@ render! = |model, pf|
     Draw.draw! bg_color |{}|
         render_map! world visible_cells shakey_cam debug_mode
         Draw.with_mode_2d! model.camera |{}|
-            render_game! world path_finder debug_mode
+            render_game! world debug_mode
 
         render_trauma_bar! world.trauma intensity
         if debug_mode then
-            render_debug! world  pf.mouse.position intensity
-        else {}
+            render_debug! world pf.mouse.position intensity
+        else
+            {}
 
     render_sound! world player_move
 
@@ -185,59 +201,75 @@ render! = |model, pf|
         when world.launch_state is
             InControl _ -> Sound.play! world.sounds.power_up
             Stalemate -> Sound.play! world.sounds.power_down
-    else {}
-
+    else
+        {}
 
     Ok world
 
 update_world! = |model, pf, dt, player_move, path_finder, isOccupied, summary_unit|
     model
-        |> Trauma.process_trauma player_move
-        |> LaunchStatus.update
-        |> LaunchCountdown.update(Num.to_u32 dt)
-        |> Particle.update dt isOccupied HexTile.get_movement_cost(model.map)
-        |> Movement.update(dt, isOccupied, path_finder)
-        |> GameActions.update!(player_move, path_finder)
-        |> Health.update
-        |> |world|
-            if world.game_time >= 3_500 then
-                AI.update world path_finder isOccupied
-            else
-                world
-        |> |world| {
-            world&
+    |> Trauma.process_trauma player_move
+    |> LaunchStatus.update
+    |> LaunchCountdown.update(Num.to_u32 dt)
+    |> Particle.update dt isOccupied HexTile.get_movement_cost(model.map)
+    |> Movement.update(dt, isOccupied, path_finder)
+    |> GameActions.update!(player_move, path_finder)
+    |> Health.update
+    |> |world|
+        if world.game_time >= 3_500 then
+            AI.update world path_finder isOccupied
+        else
+            world
+    |> |world|
+        { world &
             glowing:
-                when player_move is
-                    SelectUnit unit_index ->
-                        List.find_first(model.units, |{id}| id == unit_index)
-                        |> Result.map_ok |unit| Following (unit, Animation.make {
+            when player_move is
+                SelectUnit unit_index ->
+                    List.find_first(model.units, |{ id }| id == unit_index)
+                    |> Result.map_ok |unit|
+                        Following (
+                            unit,
+                            Animation.make {
+                                start_time: pf.timestamp.last_render_end,
+                                duration: 2.5,
+                            },
+                        )
+                    |> Result.with_default None
+
+                MoveUnit { to } ->
+                    Running (
+                        to,
+                        Animation.make {
                             start_time: pf.timestamp.last_render_end,
-                            duration: 2.5,
-                        })
-                        |> Result.with_default None
-                    MoveUnit { to } -> Running (to, Animation.make {
-                        start_time: pf.timestamp.last_render_end,
-                        duration: 1.5,
-                    })
-                    _ -> when world.glowing is
+                            duration: 1.5,
+                        },
+                    )
+
+                _ ->
+                    when world.glowing is
                         Running (cell, anim) ->
-                            if (anim.finished) then
+                            if anim.finished then
                                 None
                             else
                                 processed = Animation.process anim dt
                                 Running (cell, processed)
-                        Following (unit, anim) ->
-                            u_ = List.find_first(model.units, |{id}| id == unit.id)
-                                |> Result.with_default summary_unit
-                            if anim.finished then None
-                            else Following (u_, Animation.process anim dt)
-                        None -> None
 
+                        Following (unit, anim) ->
+                            u_ =
+                                List.find_first(model.units, |{ id }| id == unit.id)
+                                |> Result.with_default summary_unit
+                            if anim.finished then
+                                None
+                            else
+                                Following (u_, Animation.process anim dt)
+
+                        None -> None,
         }
 
 ## our main game rendering
-render_game! = |model, path_finder, debug_mode|
-    summary_unit = List.find_first(model.units, |unit| unit.id == model.selectedIndex)
+render_game! = |model, debug_mode|
+    summary_unit =
+        List.find_first(model.units, |unit| unit.id == model.selectedIndex)
         |> Result.on_err |_| List.first model.units
         |> |result|
             when result is
@@ -248,120 +280,147 @@ render_game! = |model, path_finder, debug_mode|
         |> List.map PointyHex.hex_to_pixel
         |> List.drop_first 1
         |> List.prepend (summary_unit.position)
+
     render_launch_pads! model
-    countdown_color = when model.launch_state is
-        Stalemate -> Green
-        InControl Union -> Blue
-        InControl Confederates -> Red
+    countdown_color =
+        when model.launch_state is
+            Stalemate -> Green
+            InControl Union -> Blue
+            InControl Confederates -> Red
     drawPath! unitPath_ White 5 Bool.false
     render_glow! model summary_unit
     render_units! model summary_unit
     renderHexOutline! model.hoverCell White
 
     if debug_mode then
-
         paths : List (List Hex.Point)
         paths = []
 
         Particle.get_by_component model.ecs [Position, Path]
         |> Dict.walk paths |accum, _, comps|
-                when comps is
-                    [Position pos, Path { path }] ->
-                        List.map path |cell| PointyHex.hex_to_pixel cell
-                        |> List.set 0 pos
-                        |> |points| List.append accum points
-                    _ -> accum
+            when comps is
+                [Position pos, Path { path }] ->
+                    List.map path |cell| PointyHex.hex_to_pixel cell
+                    |> List.set 0 pos
+                    |> |points| List.append accum points
+
+                _ -> accum
 
         |> List.for_each! |path|
             drawPath! path RGBA(200, 200, 200, 255) 3 Bool.false
-
         # path = Dict.map model.ecs.paths |id, { path }|
         #     List.map path |cell| PointyHex.hex_to_pixel cell
         #     |> |p|
         #         Dict.get model.ecs.positionable 2
         #         |> Result.map_ok |pos| List.set p 0 pos
         #         |> Result.with_default p
-
         # drawPath! path RGBA(200, 200, 200, 255) 5 Bool.false
     else
         {}
 
-   render_countdown!(model.countdown, countdown_color)
-   render_system! model.ecs
-   render_particles! model.ecs model.shaders.particle model.textures.empty debug_mode
+    render_countdown!(model.countdown, countdown_color)
+    render_system! model.ecs
+    render_particles! model.ecs model.shaders.particle model.textures.empty debug_mode
 
 render_map! = |model, visible_cells, shakey_cam, show_fog|
     Camera.update!(model.camera, shakey_cam)
     Draw.with_mode_2d!(
         model.camera,
         |{}|
-           render_map_fn! model.map |tile, tile_type|
+            render_map_fn! model.map |tile, tile_type|
                 tx_pos = HexTile.texture_position tile 65 89
-                tint = when tile_type is
-                    LaunchPad|Normal -> White
-                    OutOfBounds -> Black
-                drawHex! tile.cell model.hexTexture tx_pos tint
+                tint =
+                    when tile_type is
+                        LaunchPad | Normal -> White
+                        OutOfBounds -> Black
+                drawHex! tile.cell model.hexTexture tx_pos tint,
     )
     ## For some reason, rendering this with the camera is **slow**
     if show_fog then
         update_fog_map! model visible_cells shakey_cam
         render_fog! model
-    else {}
+    else
+        {}
 
 update_fog_map! = |model, visible_cells, shakey_cam|
     ## zoom the camera out to account for our fog scale
-    Camera.update!(model.camera, {
-        shakey_cam &
-        offset: {
-            x: screen.width / 2 * fog_scale,
-            y: screen.height / 2 * fog_scale,
+    Camera.update!(
+        model.camera,
+        { shakey_cam &
+            offset: {
+                x: screen.width / 2 * fog_scale,
+                y: screen.height / 2 * fog_scale,
+            },
+            zoom: fog_scale * model.base_camera.zoom,
         },
-        zoom: fog_scale * model.base_camera.zoom
-    })
+    )
     ## Make our foggy map -- drawing white over areas that are visible
     Draw.with_texture! model.render_textures.fog RocRay.fade(Black, 0.5) |{}|
-        Draw.with_mode_2d! model.camera  |{}|
+        Draw.with_mode_2d! model.camera |{}|
+            Particle.get_by_component model.ecs [Position, Occupies]
+            |> Dict.map |_, comps|
+                when comps is
+                    [Position pos, Occupies { army }] if army == Union -> Keep pos
+                    _ -> Drop
+
+            |> Dict.drop_if |(_, c)|
+                when c is
+                    Drop -> Bool.true
+                    _ -> Bool.false
+            |> Dict.values
+            |> List.for_each! |pos|
+                when pos is
+                    Keep center -> Draw.circle! { center, radius: 64 * 1.25, color: White }
+                    _ -> {}
+            # |> Dict.walk [] |accum, id, comps|
+            #     when comps is
+
+            #     accum
+
             ## iterate over our units
             List.drop_if model.units |u| u.army == Confederates
             ## drawing a circle around each unit
             |> List.for_each! |unit|
-               Draw.circle! { center: unit.position, radius: 64, color: White }
+                Draw.circle! { center: unit.position, radius: 64, color: White }
 
             ## now render our map drawing a white tile for each unit's neighboring cells
             render_map_fn! model.map |pad, tile_type|
-                center = PointyHex.hex_to_pixel  pad.cell
+                center = PointyHex.hex_to_pixel pad.cell
                 when tile_type is
                     Normal if List.contains visible_cells pad.cell ->
                         Draw.triangle_fan! PointyHex.points(center) RocRay.fade(White, 1.0)
+
                     _ -> {}
     ## finally, reset our camera back to its shakey cam settings
     Camera.update!(model.camera, shakey_cam)
-
 
 ## TODO: scissor the top of this so it doesn't sit above our FPS indicator
 render_fog! = |model|
     Draw.with_blend_mode! Multiplied |{}|
         Draw.with_mode_shader! model.shaders.fog.shader |{}|
             Shader.set_vec2! model.shaders.fog "texelSize" fog_texel_size
-                |> Shader.set_f32! "blurStrength" 3.5
-                |> \_ -> {}
-            Draw.render_texture_pro!({
-                texture: model.render_textures.fog,
-                source:  {
-                    width: screen.width * fog_scale,
-                    height: screen.height * fog_scale * -1,
-                    x: 0,
-                    y: 0,
+            |> Shader.set_f32! "blurStrength" 3.5
+            |> |_| {}
+            Draw.render_texture_pro!(
+                {
+                    texture: model.render_textures.fog,
+                    source: {
+                        width: screen.width * fog_scale,
+                        height: screen.height * fog_scale * -1,
+                        x: 0,
+                        y: 0,
+                    },
+                    dest: {
+                        width: screen.width,
+                        height: screen.height,
+                        x: 0,
+                        y: 0,
+                    },
+                    origin: { x: 0, y: 0 },
+                    rotation: 0,
+                    tint: White,
                 },
-                dest: {
-                    width: screen.width,
-                    height: screen.height,
-                    x: 0,
-                    y: 0,
-                },
-                origin: { x: 0, y: 0 },
-                rotation: 0,
-                tint: White })
+            )
 
 render_debug! = |model, mouse_pos, intensity|
     countdown_pct = Num.max(0, 1 - (Num.to_f32 model.countdown / Num.to_f32 model.countdown_start))
@@ -369,13 +428,13 @@ render_debug! = |model, mouse_pos, intensity|
         """
             ECS Size: ${model.ecs.current_size |> Num.to_str}
             Game Time: ${Inspect.to_str model.game_time}
-            Mouse to World: ( $(Num.round mouse_pos.x|>Num.to_str), ${ Num.round mouse_pos.y |> Num.to_str } )
-            Hover Cell: ${ Inspect.to_str model.hoverCell }
-            Hover Cell pixel: ${ Inspect.to_str(PointyHex.hex_to_pixel model.hoverCell) }
+            Mouse to World: ( ${Num.round mouse_pos.x |> Num.to_str}, ${Num.round mouse_pos.y |> Num.to_str} )
+            Hover Cell: ${Inspect.to_str model.hoverCell}
+            Hover Cell pixel: ${Inspect.to_str(PointyHex.hex_to_pixel model.hoverCell)}
             Countdown = ${model.countdown |> Num.to_str}
             Pct=${countdown_pct |> Num.mul 100 |> to_fixed 0}%,
             Seed = ${model.seed |> Num.to_str};
-            A=${intensity|>to_fixed 3}
+            A=${intensity |> to_fixed 3}
             Trauma=${model.trauma |> to_fixed 3}
         """
     unit_finder = |id| |u| u.id == id
@@ -386,7 +445,8 @@ render_debug! = |model, mouse_pos, intensity|
     }
 
     summary_unit_ = List.find_first(model.units, unit_finder model.selectedIndex)
-    summary_unit = summary_unit_
+    summary_unit =
+        summary_unit_
         |> Result.on_err |_| List.first model.units
         |> |result|
             when result is
@@ -394,18 +454,18 @@ render_debug! = |model, mouse_pos, intensity|
                 Err _ -> crash "must have non empty unit list"
 
     summary_text =
-    """
-    Unit Summary: ${ Unit.summary summary_unit [] }
-    """
+        """
+        Unit Summary: ${Unit.summary summary_unit []}
+        """
     summary_text_color = if summary_unit.army == Confederates then Red else Silver
     summary_text_dims =
         Effect.measure_text! summary_text 24 1 |> InternalVector.to_vector2
-    Draw.text! { pos: { x: 128+10, y: screen.height - (Num.to_f32 summary_text_dims.y + 24) }, text: summary_text, size: 24, color: summary_text_color }
+    Draw.text! { pos: { x: 128 + 10, y: screen.height - (Num.to_f32 summary_text_dims.y + 24) }, text: summary_text, size: 24, color: summary_text_color }
     debug_text_dims = Effect.measure_text! debug_text 16 1 |> InternalVector.to_vector2
 
     debug_pos = {
         x: screen.width - (Num.to_f32 debug_text_dims.x) - 48,
-        y: screen.height - (Num.to_f32 debug_text_dims.y) - 24
+        y: screen.height - (Num.to_f32 debug_text_dims.y) - 24,
     }
     Draw.rectangle! {
         rect: {
@@ -423,70 +483,73 @@ render_particles! = |ecs, shader, texture, debug|
     Draw.with_blend_mode! Alpha |{}|
         Particle.get_by_component ecs [Position, Killable, Graphics]
         |> Dict.values
-        |> List.for_each! |c| when c is
-            [
-                Position {x, y},
-                Killable { dead_frame, lifetime },
-                Graphics { radius, rotation }
-            ] ->
-                # Matrix4.value xform.transform
-                scale = Num.max(24, 10 * radius) |> Num.min 128
-                if debug then
-                    render_particle_debug! { x, y, scale, dead_frame }
-                else {}
-                Draw.with_mode_shader! shader.shader |{}|
-                    Shader.set_f32! shader "u_duration" Num.to_f32(lifetime)
+        |> List.for_each! |c|
+            when c is
+                [Position { x, y }, Killable { dead_frame, lifetime }, Graphics { radius, rotation }] ->
+                    # Matrix4.value xform.transform
+                    scale = Num.max(24, 10 * radius) |> Num.min 128
+                    if debug then
+                        render_particle_debug! { x, y, scale, dead_frame }
+                    else
+                        {}
+                    Draw.with_mode_shader! shader.shader |{}|
+                        Shader.set_f32! shader "u_duration" Num.to_f32(lifetime)
                         |> Shader.set_f32! "u_time" Num.to_f32(lifetime - dead_frame)
-                        |> \_ -> {}
+                        |> |_| {}
 
-                    Draw.texture_pro! {
-                        texture,
-                        # origin: { x: 0.5, y: 0.5 },
-                        origin: { x: 0, y: 0 },
-                        rotation,
-                        dest: {
-                            width: scale, height: scale,
-                            x: x - scale / 2,
-                            y: y - scale / 2,
-                        },
-                        source: {
-                            x: 0, y: 0, width: 1, height: 1,
-                        },
-                        tint: RocRay.fade(Black, 1.0)
-                    }
-            _ -> {}
+                        Draw.texture_pro! {
+                            texture,
+                            # origin: { x: 0.5, y: 0.5 },
+                            origin: { x: 0, y: 0 },
+                            rotation,
+                            dest: {
+                                width: scale,
+                                height: scale,
+                                x: x - scale / 2,
+                                y: y - scale / 2,
+                            },
+                            source: {
+                                x: 0,
+                                y: 0,
+                                width: 1,
+                                height: 1,
+                            },
+                            tint: RocRay.fade(Black, 1.0),
+                        }
+
+                _ -> {}
 
 ## render some debug text pointing to our particle
-render_particle_debug! = |{x, y, scale, dead_frame }|
+render_particle_debug! = |{ x, y, scale, dead_frame }|
     debug_text =
-            """
-            x: ${x |> Num.round |> Num.to_f32 |> Inspect.to_str}
-            y: ${y |>  Num.round |> Num.to_f32 |> Inspect.to_str}
-            s: ${scale |> Num.round |> Num.to_f32 |> Inspect.to_str}
-            dead:  ${dead_frame |> Inspect.to_str}
-            """
+        """
+        x: ${x |> Num.round |> Num.to_f32 |> Inspect.to_str}
+        y: ${y |> Num.round |> Num.to_f32 |> Inspect.to_str}
+        s: ${scale |> Num.round |> Num.to_f32 |> Inspect.to_str}
+        dead:  ${dead_frame |> Inspect.to_str}
+        """
     dims = RocRay.measure_text! { size: 12, text: debug_text, spacing: 4 }
     rect = {
         x: x,
         y: y - dims.y * 2,
         width: dims.x,
-        height: dims.y + 16
+        height: dims.y + 16,
     }
     Draw.rectangle! {
         rect,
-        color: RGBA 128 128 128 255
+        color: RGBA 128 128 128 255,
     }
     Draw.text! {
         text: debug_text,
         size: 12,
-        pos: { x: rect.x + 8, y: rect.y + 8},
+        pos: { x: rect.x + 8, y: rect.y + 8 },
         color: White,
     }
     Draw.line_ex! {
         end: { x, y },
         start: { y: rect.height + rect.y, x: rect.x + dims.x / 2 },
         thickness: 4,
-        color: Green
+        color: Green,
     }
     Draw.circle! { center: { x, y }, radius: 4, color: RocRay.fade(Red, 0.6) }
 
@@ -496,10 +559,9 @@ render_hex_scaled! = |cell, color|
 render_hex_outline! = |center, color, thickness|
     drawPath! PointyHex.points(center) color thickness Bool.true
 
-renderHexOutline! = \cell, color ->
-    center = (PointyHex.hex_to_pixel cell)
+renderHexOutline! = |cell, color|
+    center = PointyHex.hex_to_pixel cell
     drawPath! PointyHex.points(center) color 3 Bool.true
-
 
 to_fixed = |num, precision|
     mul = Num.pow 10 precision
@@ -507,15 +569,16 @@ to_fixed = |num, precision|
 
 render_sound! = |model, player_move|
     when player_move is
-        MoveUnit {unit_index} ->
+        MoveUnit { unit_index } ->
             List.find_first model.units |u| u.id == unit_index
-            |> Result.map_ok |{type}|
+            |> Result.map_ok |{ type }|
                 when type is
                     Cavalry -> model.sounds.horse
                     Infantry -> model.sounds.ok
                     Artillery -> model.sounds.wagon
             |> Result.with_default model.sounds.ok
             |> Sound.play!
+
         _ -> {}
 
 shakey_cam_settings = |model, _|
@@ -523,35 +586,40 @@ shakey_cam_settings = |model, _|
     intensity = model.trauma * model.trauma * model.trauma
     amplitude = 5.0 * intensity
     frequency = model.game_time |> Num.to_f32 |> Num.mul 1.002
-    updated_camera_settings = {
-        old_settings &
+    updated_camera_settings = { old_settings &
         target: {
             x: (model.base_camera.target.x + Noise.perlin2d(frequency, 0) * amplitude)
-                |> Num.round |> Num.to_f32,
+            |> Num.round
+            |> Num.to_f32,
             y: (model.base_camera.target.y + Noise.perlin2d(0, frequency) * amplitude)
-                |> Num.round |> Num.to_f32,
+            |> Num.round
+            |> Num.to_f32,
         },
-        rotation:
-            model.base_camera.rotation +
-            Noise.perlin2d(frequency, frequency) * 2.5 * intensity
-
+        rotation: model.base_camera.rotation
+        +
+        Noise.perlin2d(frequency, frequency)
+        * 2.5
+        * intensity,
     }
     (updated_camera_settings, intensity)
 
 render_launch_pads! = |model|
     List.for_each! model.map.launch_pads |pad|
-        state = LaunchStatus.get_launch_pad_state model.units pad
-        tile_type = when state is
-            Neutral -> Grey
-            Owned Union -> Blue
-            Owned Confederates -> Red
+        # state = LaunchStatus.get_launch_pad_state model.units pad
+        state = LaunchStatus.for_pad model pad
+        tile_type =
+            when state is
+                Neutral -> Grey
+                Owned Union -> Blue
+                Owned Confederates -> Red
         List.for_each! pad |cell| draw_top_tile! model.textures.top_tiles cell tile_type
 
 render_glow! = |model, summary_unit|
-   (center, pct, color, shape, max) = when model.glowing is
-        None -> (PointyHex.hex_to_pixel summary_unit.dest, 1.0, White, (Hex summary_unit.dest), 1.0) #PointyHex.hex_to_pixel (summary_unit.dest, 1.0)
-        Following ({position}, anim) -> (position, Animation.percent anim, Black, Circle 28, 2.0)
-        Running (cell, anim) -> (PointyHex.hex_to_pixel cell , Animation.percent anim, White, (Hex cell), 2.5)
+    (center, pct, color, shape, max) =
+        when model.glowing is
+            None -> (PointyHex.hex_to_pixel summary_unit.dest, 1.0, White, Hex summary_unit.dest, 1.0) # PointyHex.hex_to_pixel (summary_unit.dest, 1.0)
+            Following ({ position }, anim) -> (position, Animation.percent anim, Black, Circle 28, 2.0)
+            Running (cell, anim) -> (PointyHex.hex_to_pixel cell, Animation.percent anim, White, Hex cell, 2.5)
 
     Draw.with_mode_shader! model.shaders.ring.shader |{}|
         Shader.set_f32! model.shaders.ring "time" pct
@@ -565,10 +633,10 @@ render_glow! = |model, summary_unit|
 
                 Circle radius ->
                     Draw.circle_gradient! {
-                            center,
-                            inner: RocRay.fade(White, 0.25),
-                            outer: RocRay.fade(White, 1.0),
-                            radius,
+                        center,
+                        inner: RocRay.fade(White, 0.25),
+                        outer: RocRay.fade(White, 1.0),
+                        radius,
                     }
                     Draw.ring! {
                         center,
@@ -577,12 +645,12 @@ render_glow! = |model, summary_unit|
                         start: 90,
                         end: 360 + 90,
                         segments: 24,
-                        color: RocRay.fade(Black, 0.8)
+                        color: RocRay.fade(Black, 0.8),
                     }
     {}
 
 render_units! = |model, selected|
-   model.units
+    model.units
     |> List.drop_if |u|
         when u.health is
             Living _ -> Bool.false
@@ -595,7 +663,7 @@ render_trauma_bar! = |trauma, intensity|
 
     y_offset = screen.height - gauge_size - 32
 
-    Draw.rectangle!{
+    Draw.rectangle! {
         rect: {
             x: 8,
             y: y_offset,
@@ -604,7 +672,7 @@ render_trauma_bar! = |trauma, intensity|
         },
         color: White,
     }
-    Draw.rectangle!{
+    Draw.rectangle! {
         rect: {
             x: 8 + 4,
             y: y_offset + 8,
@@ -613,16 +681,16 @@ render_trauma_bar! = |trauma, intensity|
         },
         color: Black,
     }
-    Draw.rectangle!{
+    Draw.rectangle! {
         rect: {
             x: 8 + 6,
-            y: y_offset + 8 + (gauge_size - gauge_size * trauma - 2) ,
+            y: y_offset + 8 + (gauge_size - gauge_size * trauma - 2),
             height: gauge_size * trauma + 2,
             width: gauge_width - 4,
         },
         color: Red,
     }
-    Draw.rectangle!{
+    Draw.rectangle! {
         rect: {
             x: 8 + 8 + gauge_width,
             y: y_offset + 8,
@@ -631,10 +699,10 @@ render_trauma_bar! = |trauma, intensity|
         },
         color: Black,
     }
-    Draw.rectangle!{
+    Draw.rectangle! {
         rect: {
             x: 8 + 8 + gauge_width + 2,
-            y: y_offset + 8 + ( gauge_size - gauge_size * intensity - 2) ,
+            y: y_offset + 8 + (gauge_size - gauge_size * intensity - 2),
             height: gauge_size * intensity + 2,
             width: gauge_width - 4,
         },
@@ -645,39 +713,44 @@ render_countdown! = |countdown, color|
     diameter = 48
     text_size = 48
     center = { x: 0, y: 24 }
-    text = countdown |> Num.to_f32
+    text =
+        countdown
+        |> Num.to_f32
         |> Num.div 1_00
         |> Num.round
         |> |c|
-            if c < 50 && c > 0 then
-                (Num.to_f32 c / 10) |> Num.to_str |>
+            if c < 50 and c > 0 then
+                (Num.to_f32 c / 10)
+                |> Num.to_str
+                |>
                 |s| if Str.to_utf8 s |> List.len <= 1 then Str.concat s ".0" else s
             else
-                Num.ceiling(Num.to_f32 c/10)|>Num.to_f32 |> Num.to_str
+                Num.ceiling(Num.to_f32 c / 10) |> Num.to_f32 |> Num.to_str
     text_dims = Effect.measure_text! text text_size 1 |> InternalVector.to_vector2
 
-    Draw.circle!{ radius: diameter, center, color }
-    Draw.circle_lines!{ radius: diameter - 2, center, color: Black }
-    Draw.circle_lines!{ radius: diameter - 1, center, color: Black }
-    Draw.circle_lines!{ radius: diameter + 1, center, color: Black }
-    Draw.circle_lines!{ radius: diameter + 2, center, color: Black }
-    Draw.text!{
+    Draw.circle! { radius: diameter, center, color }
+    Draw.circle_lines! { radius: diameter - 2, center, color: Black }
+    Draw.circle_lines! { radius: diameter - 1, center, color: Black }
+    Draw.circle_lines! { radius: diameter + 1, center, color: Black }
+    Draw.circle_lines! { radius: diameter + 2, center, color: Black }
+    Draw.text! {
         color: White,
         pos: {
             x: center.x - text_dims.x / 2,
             y: center.y - text_dims.y / 2,
         },
         size: text_size,
-        text
+        text,
     }
 
-
-TileType : [ LaunchPad, OutOfBounds, Normal ]
+TileType : [LaunchPad, OutOfBounds, Normal]
 render_map_fn! : HexTile.HexMap, (HexTile.HexTile, TileType => {}) => _
 render_map_fn! = |hex_map, draw_tile!|
     all_pads = List.join hex_map.launch_pads
-    launch_tiles = hex_map.launch_pads |> List.join_map |pads|
-        List.map pads |cell| HexTile.make_tile cell Basalt
+    launch_tiles =
+        hex_map.launch_pads
+        |> List.join_map |pads|
+            List.map pads |cell| HexTile.make_tile cell Basalt
     tiles =
         Dict.values hex_map.tiles
         |> List.drop_if |tile| List.contains all_pads tile.cell
@@ -693,24 +766,26 @@ render_map_fn! = |hex_map, draw_tile!|
             tile_type =
                 if List.contains(launch_tiles, pad) then
                     LaunchPad
-                else if List.contains(hex_map.center, pad.cell) then OutOfBounds
-                else Normal
-            draw_tile! pad tile_type
-
+                else if List.contains(hex_map.center, pad.cell) then
+                    OutOfBounds
+                else
+                    Normal
+            draw_tile! pad tile_type,
     )
 
 draw_top_tile! = |texture, cell, type|
     center = PointyHex.hex_to_pixel cell
     offset = { x: center.x - 27, y: center.y - 30 }
     source =
-    when type is
-        Blue -> { x: 55 * 0, y: 1 * 57, height: 57, width: 55 }
-        Grey  -> { x: 55 * 0, y: 2 * 57, height: 57, width: 55 }
-        Red  -> { x: 55 * 1, y: 3 * 57, height: 57, width: 55 }
-    tint = when type is
-        Blue -> RocRay.fade(Blue, 0.95)
-        Grey -> Gray
-        Red -> RocRay.fade(Red, 0.95)
+        when type is
+            Blue -> { x: 55 * 0, y: 1 * 57, height: 57, width: 55 }
+            Grey -> { x: 55 * 0, y: 2 * 57, height: 57, width: 55 }
+            Red -> { x: 55 * 1, y: 3 * 57, height: 57, width: 55 }
+    tint =
+        when type is
+            Blue -> RocRay.fade(Blue, 0.95)
+            Grey -> Gray
+            Red -> RocRay.fade(Red, 0.95)
 
     Draw.texture_rec! {
         texture,
@@ -764,18 +839,20 @@ render_system! = |ecs|
                     Texture { texture, tint, flip, origin, source, scale } ->
                         ## TODO: clean up this mess around scaling, flipping and padding
                         scale0 = {
-                            x: if flip == FlipX || flip == FlipBoth then scale.x * -1 else scale.x,
-                            y: if flip == FlipX || flip == FlipBoth then scale.y * -1 else scale.y,
+                            x: if flip == FlipX or flip == FlipBoth then scale.x * -1 else scale.x,
+                            y: if flip == FlipX or flip == FlipBoth then scale.y * -1 else scale.y,
                         }
                         width = source.width * scale0.x
                         height = source.height * scale0.y
-                        source0 = {source&
-                            width: if flip == FlipX || flip == FlipBoth then
+                        source0 = { source &
+                            width: if flip == FlipX or flip == FlipBoth then
                                 source.width * -1
-                            else source.width,
-                            height: if flip == FlipY || flip == FlipBoth then
+                            else
+                                source.width,
+                            height: if flip == FlipY or flip == FlipBoth then
                                 source.height * -1
-                            else source.height,
+                            else
+                                source.height,
                         }
                         padding = {
                             x: if flip == FlipX then -8 else 8,
@@ -794,20 +871,22 @@ render_system! = |ecs|
                             rotation: 0,
                             tint,
                         }
-                        # Draw.texture_pro! {
-                        #     dest: {
-                        #         x: x - Num.abs(width) / 2,
-                        #         y: y - Num.abs(height) / 2,
-                        #         width,
-                        #         height,
-                        #     },
-                        #     origin,
-                        #     source: source0,
-                        #     texture,
-                        #     rotation: 0,
-                        #     tint: White,
-                        # }
+
+                    # Draw.texture_pro! {
+                    #     dest: {
+                    #         x: x - Num.abs(width) / 2,
+                    #         y: y - Num.abs(height) / 2,
+                    #         width,
+                    #         height,
+                    #     },
+                    #     origin,
+                    #     source: source0,
+                    #     texture,
+                    #     rotation: 0,
+                    #     tint: White,
+                    # }
                     _ -> {}
+
             _ -> {}
 drawUnit! : Unit, RocRay.Texture, Bool => _
 drawUnit! = |unit, texture, selected|
@@ -821,10 +900,11 @@ drawUnit! = |unit, texture, selected|
             [FlipX],
     }
     source = { x: 0, y: 0, width: 40, height: 62 }
-    source_ = when unit.type is
-        Infantry -> { source & x: source.width * 0, y: source.height * 0 }
-        Cavalry -> { source & x: source.width * 1, y: source.height * 0 }
-        Artillery -> { source & x: source.width * 0, y: source.height * 2 }
+    source_ =
+        when unit.type is
+            Infantry -> { source & x: source.width * 0, y: source.height * 0 }
+            Cavalry -> { source & x: source.width * 1, y: source.height * 0 }
+            Artillery -> { source & x: source.width * 0, y: source.height * 2 }
 
     unit_width = 12
     unit_height = 24
@@ -835,7 +915,8 @@ drawUnit! = |unit, texture, selected|
             width: unit_width + 4,
             height: unit_height + 4,
             x: drawTo.x - unit_width / 2 - 2,
-            y: drawTo.y - unit_height / 2 - 2},
+            y: drawTo.y - unit_height / 2 - 2,
+        },
         origin: { x: 0, y: 0 },
         rotation: 0,
         tint: if selected then Green else if unit.army == Confederates then Red else Blue,
@@ -847,7 +928,8 @@ drawUnit! = |unit, texture, selected|
             width: unit_width,
             height: unit_height,
             x: drawTo.x - unit_width / 2,
-            y: drawTo.y - unit_height / 2},
+            y: drawTo.y - unit_height / 2,
+        },
         origin: { x: 0, y: 0 },
         rotation: 0,
         tint: White,
