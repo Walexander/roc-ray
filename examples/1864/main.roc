@@ -83,12 +83,17 @@ init! = |{}|
         particle: Shader.new!(
             "examples/1864/assets/shaders/default.vs",
             "examples/1864/assets/shaders/explosion.frag",
-            ["u_time", "u_duration"],
+            ["u_progress"],
         )?,
         ring: Shader.new!(
             "examples/1864/assets/shaders/scale.vert",
             "examples/1864/assets/shaders/noop.frag",
             ["time", "max", "center"],
+        )?,
+        boom: Shader.new!(
+            "examples/1864/assets/shaders/default.vs",
+            "examples/1864/assets/shaders/bimboombam.frag",
+            ["u_scale", "u_progress"],
         )?,
     }
     RenderTexture.set_render_texture_filter! render_textures.fog Bilinear
@@ -140,12 +145,7 @@ render! = |model, pf|
         mouseCell2
     else
         model.selectedCell
-
     ## list of visible cells
-    # visible_cells = model.units
-    #     |> List.drop_if |u| u.army == Confederates
-    #     |> List.join_map |unit| PointyHex.neighbors unit.cell |> List.append unit.cell
-
     visible_cells =
         model.ecs.occupants
         |> Dict.keep_if |(_, { army })| army == Union
@@ -183,7 +183,8 @@ render! = |model, pf|
     bg_color = RGBA 64 64 64 255
     ## get our shakey camera settings and the current intensity
     (shakey_cam, intensity) = shakey_cam_settings model pf
-    ## !! Render Game !!
+
+    ## !! RENDERING !!
     Draw.draw! bg_color |{}|
         render_map! world visible_cells shakey_cam debug_mode
         Draw.with_mode_2d! model.camera |{}|
@@ -195,14 +196,13 @@ render! = |model, pf|
         else
             {}
 
+    ## !! SOUNDS !!
     render_sound! world player_move
-
     if world.launch_state != model.launch_state then
         when world.launch_state is
             InControl _ -> Sound.play! world.sounds.power_up
             Stalemate -> Sound.play! world.sounds.power_down
-    else
-        {}
+    else {}
 
     Ok world
 
@@ -308,19 +308,12 @@ render_game! = |model, debug_mode|
 
         |> List.for_each! |path|
             drawPath! path RGBA(200, 200, 200, 255) 3 Bool.false
-        # path = Dict.map model.ecs.paths |id, { path }|
-        #     List.map path |cell| PointyHex.hex_to_pixel cell
-        #     |> |p|
-        #         Dict.get model.ecs.positionable 2
-        #         |> Result.map_ok |pos| List.set p 0 pos
-        #         |> Result.with_default p
-        # drawPath! path RGBA(200, 200, 200, 255) 5 Bool.false
     else
         {}
 
     render_countdown!(model.countdown, countdown_color)
     render_system! model.ecs
-    render_particles! model.ecs model.shaders.particle model.textures.empty debug_mode
+    render_particles! model.ecs model.shaders.boom model.textures.empty debug_mode
 
 render_map! = |model, visible_cells, shakey_cam, show_fog|
     Camera.update!(model.camera, shakey_cam)
@@ -372,12 +365,7 @@ update_fog_map! = |model, visible_cells, shakey_cam|
                 when pos is
                     Keep center -> Draw.circle! { center, radius: 64 * 1.25, color: White }
                     _ -> {}
-            # |> Dict.walk [] |accum, id, comps|
-            #     when comps is
-
-            #     accum
-
-            ## iterate over our units
+            ## drop the enemy's units
             List.drop_if model.units |u| u.army == Confederates
             ## drawing a circle around each unit
             |> List.for_each! |unit|
@@ -490,11 +478,12 @@ render_particles! = |ecs, shader, texture, debug|
                     scale = Num.max(24, 10 * radius) |> Num.min 128
                     if debug then
                         render_particle_debug! { x, y, scale, dead_frame }
-                    else
-                        {}
+                    else {}
+                    progress = (Num.to_f32(lifetime - dead_frame) / Num.to_f32 lifetime)
                     Draw.with_mode_shader! shader.shader |{}|
-                        Shader.set_f32! shader "u_duration" Num.to_f32(lifetime)
-                        |> Shader.set_f32! "u_time" Num.to_f32(lifetime - dead_frame)
+                        shader
+                        |> Shader.set_f32! "u_progress" progress
+                        |> Shader.set_f32! "u_scale" 1.0
                         |> |_| {}
 
                         Draw.texture_pro! {
@@ -503,10 +492,10 @@ render_particles! = |ecs, shader, texture, debug|
                             origin: { x: 0, y: 0 },
                             rotation,
                             dest: {
-                                width: scale,
-                                height: scale,
-                                x: x - scale / 2,
-                                y: y - scale / 2,
+                                width: 32,
+                                height: 32,
+                                x: x - 32 / 2,
+                                y: y - 32 / 2,
                             },
                             source: {
                                 x: 0,

@@ -62,6 +62,7 @@ YearOfDecision : {
         fog: Shader.RenderShader,
         ring: Shader.RenderShader,
         particle: Shader.RenderShader,
+        boom: Shader.RenderShader,
     },
     sounds: {
         power_up: RocRay.Sound,
